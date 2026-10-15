@@ -3,3 +3,8 @@
 *.bak
 Thumbs.db
 .DS_Store
+
+# Local deploy helper and its backups
+deploy.ps1
+deploy.cmd
+.backups/

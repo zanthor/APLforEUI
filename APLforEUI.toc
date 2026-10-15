@@ -1,9 +1,15 @@
 ## Interface: 120100
 ## Title: APL for EUI
-## Notes: Proof of concept - flags Windwalker Monk casts that deviate from a simplified test APL, chat-only output
+## Notes: Suggests the next cast from a configurable APL and tracks how closely you follow it
 ## Author: zanthor
 ## Version: 0.1.0
 ## OptionalDeps: EllesmereUI, EllesmereUICooldownManager
 ## SavedVariables: APLforEUIDB
 
-APLforEUI.lua
+Core.lua
+Specs\Monk_Windwalker.lua
+Tracking.lua
+Widgets.lua
+Glow.lua
+Options.lua
+Slash.lua

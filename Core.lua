@@ -1,0 +1,225 @@
+local _, ns = ...
+
+-------------------------------------------------------------------------------
+--  Shared helpers and the spec registry. Spec modules (Specs/*.lua) register
+--  themselves here; everything else asks for the active spec instead of
+--  checking for one class/spec directly.
+-------------------------------------------------------------------------------
+
+APLforEUIDB = APLforEUIDB or {}
+function ns.DB()
+    return APLforEUIDB
+end
+
+-- Squashed for now (more debug coming later) -- stats/TTS/broker keep running
+-- regardless, this only silences the chat print lines. /apl chat toggles it.
+ns.chatOutput = false
+
+-- Resolved spell ID of the last successful cast, set by Tracking after every
+-- report.
+ns.lastCastSpellID = nil
+
+-- Lightweight "what are we channeling right now" state, decoupled from the
+-- cast-report dedup machinery -- just an on/off flag per active channel.
+ns.currentChannelSpellID = nil
+function ns.IsChanneling(spellID) return ns.currentChannelSpellID == spellID end
+
+-- /apl <cmd> handlers, registered by whichever file owns the state they read.
+ns.slashCommands = {}
+
+-------------------------------------------------------------------------------
+--  Spec registry. A spec table provides:
+--    specID, rangeSpellID          (target counting)
+--    Evaluate() -> spellID, step
+--    OnCast(spellID)               every reported cast, in or out of combat
+--    OnCombatCast(spellID)         reported casts in combat only (optional)
+--    OnAura(updateInfo)            player UNIT_AURA (optional)
+--    OnReset()                     tracking stopped (optional)
+--    DebugPrefix() -> string       chat debug line (optional)
+--    ttsAlias = { [spellID] = "short name" }
+-------------------------------------------------------------------------------
+ns.specs = {}
+
+function ns.RegisterSpec(spec)
+    ns.specs[spec.specID] = spec
+end
+
+function ns.GetActiveSpec()
+    local spec = GetSpecialization and GetSpecialization()
+    local specID = spec and GetSpecializationInfo(spec)
+    return specID and ns.specs[specID] or nil
+end
+
+function ns.EvaluateExpected()
+    local spec = ns.GetActiveSpec()
+    if not spec then return nil end
+    return spec.Evaluate()
+end
+
+-------------------------------------------------------------------------------
+--  Spell helpers
+-------------------------------------------------------------------------------
+
+-- Resolve a base spell to its currently active override (e.g. Rising Sun Kick
+-- -> Rushing Wind Kick when the replacing talent is active).
+function ns.ResolveOverride(spellID)
+    if C_Spell and C_Spell.GetOverrideSpell then
+        local ov = C_Spell.GetOverrideSpell(spellID)
+        if ov and ov ~= 0 and ov ~= spellID then return ov end
+    end
+    return spellID
+end
+
+local _spellNameCache = {}
+function ns.SpellName(spellID)
+    local name = _spellNameCache[spellID]
+    if name then return name end
+    local info = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
+    name = (info and info.name) or ("Spell " .. spellID)
+    _spellNameCache[spellID] = name
+    return name
+end
+
+-- A resolvable spell has real info behind it; an echo/tick id that slips past
+-- the known-spell filter still won't resolve, matching EUI's own skip.
+function ns.SpellResolvable(spellID)
+    return (C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)) ~= nil
+end
+
+-- startTime/duration on the cooldown table go secret during real M+/raid
+-- combat and cannot be compared at all; isActive/isOnGCD (and GetSpellCharges's
+-- isActive) stay clean bools even then, per EUI's own CDM (CdReadyIsReady in
+-- EUI_CDM_HookIconWatch.lua) -- mirror that instead of touching the numbers.
+function ns.IsOffCooldown(spellID)
+    local ci = C_Spell and C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(spellID)
+    if ci and (ci.maxCharges or 0) > 1 then
+        return not ci.isActive
+    end
+    local cd = C_Spell and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(spellID)
+    if not cd then return true end
+    return not (cd.isActive and not cd.isOnGCD)
+end
+
+function ns.IsTalented(spellID)
+    if C_SpellBook and C_SpellBook.IsSpellKnown then return C_SpellBook.IsSpellKnown(spellID) == true end
+    return IsPlayerSpell(spellID) == true
+end
+
+-- No direct "enemies in range" API exists, so this infers it the same way
+-- EUI's own EllesmereUI_Range.lua does for single-target range: per-nameplate
+-- IsSpellInRange against the active spec's range spell, counted up. Plain
+-- booleans the whole way, never secret.
+function ns.GetTargetCount()
+    local count = 0
+    local spec = ns.GetActiveSpec()
+    local rangeSpellID = spec and spec.rangeSpellID
+    if not rangeSpellID then return count end
+    local plates = C_NamePlate and C_NamePlate.GetNamePlates and C_NamePlate.GetNamePlates(issecure())
+    if not plates then return count end
+    for _, plate in ipairs(plates) do
+        local unit = plate.namePlateUnitToken or plate.unitToken
+        if unit and UnitCanAttack("player", unit) and not UnitIsDead(unit) then
+            local inRange = C_Spell and C_Spell.IsSpellInRange and C_Spell.IsSpellInRange(rangeSpellID, unit)
+            if inRange then count = count + 1 end
+        end
+    end
+    return count
+end
+
+-------------------------------------------------------------------------------
+--  Aura helpers
+-------------------------------------------------------------------------------
+
+-- Blizzard's own Cooldown Viewer (Blizzard_CooldownViewer) item frames expose
+-- a derived "is this aura present" signal (auraInstanceID) as a plain field,
+-- stamped on by Blizzard's own privileged code -- never the raw secret aura
+-- itself. This is the exact mechanism EUI's own Cooldown Manager relies on
+-- for buff-bar glows, used here for any buff whose aura data goes dark to
+-- regular addon code in real combat.
+function ns.FindCooldownViewerItemForSpell(spellID)
+    for _, viewerName in ipairs({ "BuffIconCooldownViewer", "BuffBarCooldownViewer" }) do
+        local viewer = _G[viewerName]
+        if viewer and viewer.GetItemFrames then
+            for _, item in ipairs(viewer:GetItemFrames()) do
+                if item.GetBaseSpellID and item:GetBaseSpellID() == spellID then
+                    return item
+                end
+            end
+        end
+    end
+    return nil
+end
+
+function ns.IsCooldownViewerAuraActive(spellID)
+    local item = ns.FindCooldownViewerItemForSpell(spellID)
+    return item ~= nil and item:IsShown() and item.GetAuraSpellInstanceID
+        and item:GetAuraSpellInstanceID() ~= nil
+end
+
+-- Tries the Cooldown Viewer signal first (reliable in real combat, but only
+-- covers spells in the spec's tracked-buff set); falls back to the direct
+-- aura read (fine outside restricted combat, or for untracked buffs).
+function ns.HasBuff(spellID)
+    if ns.IsCooldownViewerAuraActive(spellID) then return true end
+    return C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID
+        and C_UnitAuras.GetPlayerAuraBySpellID(spellID) ~= nil
+end
+
+-- Player-castable lust spells (mirrors EllesmereUIQoL_Bloodlust.lua's
+-- LUST_SPELLS) -- checked as buffs on the player, not the sated lockout.
+local LUST_BUFFS = {
+    2825,    -- Bloodlust
+    32182,   -- Heroism
+    80353,   -- Time Warp
+    390386,  -- Fury of the Aspects
+    272678,  -- Primal Rage
+}
+
+function ns.HasBloodlust()
+    for _, sid in ipairs(LUST_BUFFS) do
+        if ns.HasBuff(sid) then return true end
+    end
+    return false
+end
+
+-------------------------------------------------------------------------------
+--  Misc helpers
+-------------------------------------------------------------------------------
+
+-- Text-to-speech, local-only playback. Argument order on live clients is
+-- (voiceID, text, destination, volume, interrupt); destination 1 = local.
+-- Silently no-ops if TTS isn't available (mirrors EllesmereUIQoL_MovementAlert.lua).
+function ns.SpeakAlertText(text)
+    if not (C_VoiceChat and C_VoiceChat.SpeakText) then return end
+    pcall(C_VoiceChat.SpeakText, 0, text, 1, 100, true)
+end
+
+-- Truncates a single-line FontString's text (font size stays fixed at
+-- whatever the caller already set) so it never overflows a given max width
+-- -- cuts from the end and appends "..." once the full text no longer fits.
+-- fullText is the UNtruncated intended text, stored by the caller, so a
+-- later width/style change can always re-truncate from the real text
+-- instead of compounding truncation on an already-cut string.
+function ns.TruncateFontStringText(fs, fullText, maxWidth)
+    fs:SetText(fullText)
+    if not maxWidth or maxWidth <= 0 then return end
+    if fs:GetStringWidth() <= maxWidth then return end
+    local lo, hi = 0, #fullText
+    while lo < hi do
+        local mid = math.ceil((lo + hi + 1) / 2)
+        fs:SetText(fullText:sub(1, mid) .. "...")
+        if fs:GetStringWidth() <= maxWidth then
+            lo = mid
+        else
+            hi = mid - 1
+        end
+    end
+    fs:SetText(lo > 0 and (fullText:sub(1, lo) .. "...") or "...")
+end
+
+function ns.ColorHex(c)
+    local r = math.floor((c and c.r or 1) * 255 + 0.5)
+    local g = math.floor((c and c.g or 1) * 255 + 0.5)
+    local b = math.floor((c and c.b or 1) * 255 + 0.5)
+    return string.format("|cff%02x%02x%02x", r, g, b)
+end
