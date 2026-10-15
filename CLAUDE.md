@@ -38,7 +38,11 @@ it and could later be upstreamed:
 - Zero taint: never touch protected frames or call protected functions from
   insecure code; cosmetic `hooksecurefunc` only.
 - 12.x secret values: never compare, index or do arithmetic on them; check
-  `issecretvalue` first.
+  `issecretvalue` first. Secrecy follows the active addon restriction, not
+  the content: training-dummy combat already activates `Combat`, with
+  cooldowns, auras and Energy secret but Chi and `C_Spell.IsSpellUsable`
+  readable (verified in game, 2026-10-15). So dummy tests are valid
+  restricted-combat tests; `/apl secrets` shows the live state.
 - Use `C_` APIs (`C_Spell`, `C_SpecializationInfo`, `C_Item`), not the
   deprecated globals.
 - When EllesmereUI already solves something (cast tracking, cooldown viewer

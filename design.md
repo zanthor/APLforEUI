@@ -41,7 +41,7 @@ comparisons, `&`, `|` (write `!(a<=b)`, not `!a<=b`).
 |---|---|
 | `cooldown.X.ready` | Off cooldown (GCD ignored). Checks the button's current form (override). |
 | `charges.X`, `charges.X.full` | 0 / 1 / max from non-secret flags (exact for up to 2 charges). Exact spell X. |
-| `usable.X` | `C_Spell.IsSpellUsable` (resources, etc.). Current form. Not flagged secret in the API docs; to be confirmed in combat. |
+| `usable.X` | `C_Spell.IsSpellUsable` (resources, etc.). Current form. Confirmed readable under the `Combat` restriction (cooldowns/auras/Energy secret at the same time). The way to check resource costs for specs whose resource is secret. |
 | `spell.X.base_cd` | Static base cooldown in seconds. |
 | `buff.X.up` | Cooldown Viewer signal, then direct read. |
 | `talent.X` | Known/talented. |
