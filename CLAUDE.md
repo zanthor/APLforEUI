@@ -39,7 +39,8 @@ it and could later be upstreamed:
 
 ## Workflow
 
-- Before committing, review the diff against the rules above and say plainly
-  if anything fails.
+- Before committing, run `luac -p APLforEUI.lua` (Lua 5.1 compile check; the
+  `LUAC` env var points at it), review the diff against the rules above, and
+  say plainly if anything fails.
 - Commit messages: `feat: ...` / `fix: ...` style. Ask before pushing.
 - Bump `## Version` in the TOC when the user asks for a release.
