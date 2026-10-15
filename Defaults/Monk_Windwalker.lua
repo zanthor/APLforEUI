@@ -1,0 +1,174 @@
+local _, ns = ...
+
+-------------------------------------------------------------------------------
+--  Built-in Windwalker APL: the same simplified test APL as monkapl.md (and,
+--  until parity is proven, Specs/Monk_Windwalker.lua), expressed as data.
+--  Labels match monkapl.md's step numbers; "A" prefixes the AOE list.
+-------------------------------------------------------------------------------
+
+-- Zenith and Zenith Stomp share one button: once talented into Stomp every
+-- press reports zenith_stomp, and what it did depends on the Zenith window
+-- at that moment (down = build, <=2s left = recast-to-extend, else a Stomp
+-- spend). Shared by the zenith/hotjs timers and the stomp counter.
+local ZENITH_BUILD_OR_EXTEND = "!timer.zenith.up|timer.zenith.remains<=2"
+
+ns.RegisterBuiltinAPL({
+    id = "builtin:monk_windwalker",
+    name = "Windwalker (default)",
+    specID = 269,
+    builtin = true,
+    options = { noRepeatLastCast = true, rangeSpell = "tiger_palm" },
+
+    names = {
+        tiger_palm = 100780,
+        fists_of_fury = 113656,
+        blackout_kick = 100784,
+        rising_sun_kick = 107428,
+        rushing_wind_kick = 467307,
+        whirling_dragon_punch = 152175,
+        strike_of_the_windlord = 392983,
+        celestial_conduit = 443028,
+        invoke_xuen = 123904,
+        zenith = 1249625,               -- casts the cooldown and tags the buff
+        zenith_stomp = 1272696,
+        zenith_stomp_talent = 1261849,
+        spinning_crane_kick = 101546,
+        slicing_winds = 1217413,
+        hotjs = 443294,                 -- Heart of the Jade Serpent buff
+        combo_breaker = 137384,
+        dance_of_chi_ji = 325202,
+        unbroken_rhythm = 1297033,
+        obsidian_spiral = 1249832,
+        harmonic_combo = 1250041,
+        shadowboxing_treads = 392982,
+        restore_balance = 442719,       -- Invoke Xuen: 2 min cooldown
+        xuens_bond = 292986,            -- Invoke Xuen: 90 sec cooldown
+    },
+
+    variables = {
+        -- Base 3 Chi, -1 during Zenith, -1 with Harmonic Combo, floor 1.
+        { name = "fof_cost", expr = "max(1,3-buff.zenith.up-talent.harmonic_combo)" },
+        -- Unknown (Xuen never seen cast) counts as not soon.
+        { name = "xuen_soon", expr = "timer.xuen.remains<=10" },
+        -- Spend from 2 Zenith charges freely; from 1 only if a full recharge
+        -- fits before Xuen is back, so Xuen always has a charge with it.
+        { name = "safe_zenith", expr = "charges.zenith.full|(charges.zenith>=1&!(timer.xuen.remains<spell.zenith.base_cd))" },
+        { name = "hotjs_ending", expr = "buff.hotjs.up&timer.hotjs.remains<=2" },
+        -- "Almost over" = not enough time left to spend every Stomp charge (~3s each).
+        { name = "zenith_almost_over", expr = "buff.zenith.up&timer.zenith.remains<=counter.stomp*3" },
+        { name = "stomp_ready", expr = "talent.zenith_stomp_talent&counter.stomp>0" },
+        -- WDP only works once Fists of Fury and the kick are both on cooldown.
+        { name = "wdp_usable", expr = "talent.whirling_dragon_punch&!cooldown.fists_of_fury.ready&!cooldown.rising_sun_kick.ready" },
+        -- Proc stack counts are secret in combat; dump on time left only.
+        { name = "cb_dump", expr = "buff.combo_breaker.up&timer.combo_breaker.remains<=3" },
+        { name = "dcj_dump", expr = "buff.dance_of_chi_ji.up&timer.dance_of_chi_ji.remains<=3" },
+    },
+
+    timers = {
+        { name = "xuen", triggers = {
+            { on = "cast", spell = "invoke_xuen", when = "talent.xuens_bond", action = "set", value = "90" },
+            { on = "cast", spell = "invoke_xuen", when = "talent.restore_balance", action = "set", value = "120" },
+            { on = "cast", spell = "invoke_xuen", when = "spell.invoke_xuen.base_cd>0", action = "set", value = "spell.invoke_xuen.base_cd" },
+        } },
+        -- The 20s buff window, not the 90s charge recharge.
+        { name = "zenith", triggers = {
+            { on = "cast", spell = "zenith", action = "set", value = "20" },
+            { on = "cast", spell = "zenith_stomp", when = ZENITH_BUILD_OR_EXTEND, action = "set", value = "20" },
+        } },
+        -- Heart of the Jade Serpent: WDP/Conduit grant a flat 6s; Zenith adds
+        -- 4s to a window WDP/Conduit started, otherwise starts a fresh 4s.
+        -- hotjs_wdp marks a window whose latest source was WDP/Conduit.
+        { name = "hotjs_wdp", triggers = {
+            { on = "cast", spell = "whirling_dragon_punch", action = "set", value = "6" },
+            { on = "cast", spell = "celestial_conduit", action = "set", value = "6" },
+            { on = "cast", spell = "zenith", action = "clear" },
+            { on = "cast", spell = "zenith_stomp", when = ZENITH_BUILD_OR_EXTEND, action = "clear" },
+        } },
+        { name = "hotjs", triggers = {
+            { on = "cast", spell = "whirling_dragon_punch", action = "set", value = "6" },
+            { on = "cast", spell = "celestial_conduit", action = "set", value = "6" },
+            { on = "cast", spell = "zenith", when = "timer.hotjs_wdp.up", action = "add", value = "4" },
+            { on = "cast", spell = "zenith", action = "set", value = "4" },
+            { on = "cast", spell = "zenith_stomp", when = "(" .. ZENITH_BUILD_OR_EXTEND .. ")&timer.hotjs_wdp.up", action = "add", value = "4" },
+            { on = "cast", spell = "zenith_stomp", when = ZENITH_BUILD_OR_EXTEND, action = "set", value = "4" },
+        } },
+        -- 15s procs. The application moment can't be seen under combat
+        -- secrecy, so the clock starts at 13s to flag "almost over" early
+        -- rather than miss it. Restarts after each consuming cast.
+        { name = "combo_breaker", triggers = {
+            { on = "cast", spell = "blackout_kick", action = "clear" },
+            { on = "aura_present", spell = "combo_breaker", action = "start", value = "13" },
+            { on = "aura_absent", spell = "combo_breaker", action = "clear" },
+        } },
+        { name = "dance_of_chi_ji", triggers = {
+            { on = "cast", spell = "spinning_crane_kick", action = "clear" },
+            { on = "aura_present", spell = "dance_of_chi_ji", action = "start", value = "13" },
+            { on = "aura_absent", spell = "dance_of_chi_ji", action = "clear" },
+        } },
+    },
+
+    counters = {
+        -- Zenith Stomp's 2 charges live with the Zenith window, not a real
+        -- recharge (the spell always reads as ready), so they are counted.
+        { name = "stomp", initial = 2, min = 0, max = 2, triggers = {
+            { on = "cast", spell = "zenith", action = "set", value = "2" },
+            { on = "cast", spell = "zenith_stomp", when = "!timer.zenith.up", action = "set", value = "2" },
+            { on = "cast", spell = "zenith_stomp", when = "timer.zenith.remains>2", action = "sub", value = "1" },
+        } },
+    },
+
+    lists = {
+        { name = "ST", min = 1, max = 1, entries = {
+            { label = "O1", spell = "invoke_xuen", when = "override.invoke_xuen=invoke_xuen" },
+            { label = "O2", spell = "zenith", when = "!buff.zenith.up&variable.safe_zenith" },
+            { label = "1", spell = "fists_of_fury", when = "variable.hotjs_ending&resource.chi>=variable.fof_cost" },
+            { label = "2", spell = "whirling_dragon_punch", when = "!buff.hotjs.up&variable.wdp_usable&!variable.xuen_soon" },
+            { label = "3", spell = "strike_of_the_windlord", when = "!buff.hotjs.up&talent.strike_of_the_windlord&!variable.xuen_soon" },
+            { label = "4", spell = "celestial_conduit", when = "!buff.hotjs.up&override.invoke_xuen=celestial_conduit" },
+            { label = "6", spell = "zenith_stomp", when = "buff.zenith.up&variable.stomp_ready&(resource.chi<=4|variable.zenith_almost_over|channeling.celestial_conduit)" },
+            { label = "7", spell = "tiger_palm", when = "!buff.zenith.up&bloodlust&resource.chi<=4" },
+            { label = "8", spell = "tiger_palm", when = "resource.chi<variable.fof_cost" },
+            { label = "9", spell = "fists_of_fury", when = "resource.chi>=variable.fof_cost" },
+            { label = "10", spell = "rising_sun_kick", when = "override.rising_sun_kick=rushing_wind_kick" },
+            { label = "11", spell = "blackout_kick", when = "variable.cb_dump" },
+            { label = "12", spell = "spinning_crane_kick", when = "variable.dcj_dump" },
+            { label = "13", spell = "spinning_crane_kick", when = "buff.unbroken_rhythm.up" },
+            { label = "14", spell = "rising_sun_kick", when = "override.rising_sun_kick=rising_sun_kick&!buff.unbroken_rhythm.up" },
+            { label = "15", spell = "blackout_kick", when = "buff.combo_breaker.up|(buff.zenith.up&talent.obsidian_spiral)" },
+            { label = "16", spell = "spinning_crane_kick", when = "buff.zenith.up&(resource.chi>4|buff.dance_of_chi_ji.up)" },
+            { label = "17", spell = "tiger_palm", when = "resource.chi<2" },
+            { label = "18", spell = "tiger_palm", when = "resource.chi<=4&!buff.zenith.up" },
+            -- Filler; "never suggest the last cast" makes these alternate.
+            { label = "19", spell = "blackout_kick" },
+            { label = "19", spell = "tiger_palm" },
+        } },
+        { name = "AOE", min = 2, entries = {
+            { label = "O1", spell = "invoke_xuen", when = "override.invoke_xuen=invoke_xuen" },
+            { label = "O2", spell = "zenith", when = "!buff.zenith.up&variable.safe_zenith" },
+            { label = "A1", spell = "fists_of_fury", when = "variable.hotjs_ending&resource.chi>=variable.fof_cost" },
+            { label = "A2", spell = "whirling_dragon_punch", when = "!buff.hotjs.up&variable.wdp_usable&!variable.xuen_soon" },
+            { label = "A3", spell = "strike_of_the_windlord", when = "!buff.hotjs.up&talent.strike_of_the_windlord&!variable.xuen_soon" },
+            { label = "A4", spell = "celestial_conduit", when = "!buff.hotjs.up&override.invoke_xuen=celestial_conduit" },
+            { label = "A6", spell = "zenith_stomp", when = "buff.zenith.up&variable.stomp_ready&(resource.chi<=4|variable.zenith_almost_over|channeling.celestial_conduit)" },
+            { label = "A7", spell = "tiger_palm", when = "resource.chi<variable.fof_cost" },
+            { label = "A8", spell = "fists_of_fury", when = "resource.chi>=variable.fof_cost" },
+            { label = "A9", spell = "spinning_crane_kick", when = "buff.unbroken_rhythm.up" },
+            { label = "A10", spell = "rising_sun_kick", when = "!cooldown.fists_of_fury.ready" },
+            { label = "A11", spell = "rising_sun_kick", when = "override.rising_sun_kick=rushing_wind_kick&!buff.unbroken_rhythm.up" },
+            { label = "A12", spell = "rising_sun_kick", when = "override.rising_sun_kick=rising_sun_kick&buff.hotjs.up&!buff.unbroken_rhythm.up" },
+            { label = "A13", spell = "blackout_kick", when = "variable.cb_dump" },
+            { label = "A14", spell = "spinning_crane_kick", when = "variable.dcj_dump" },
+            { label = "A15", spell = "spinning_crane_kick", when = "buff.zenith.up&targets>=5" },
+            { label = "A16", spell = "rising_sun_kick", when = "override.rising_sun_kick=rising_sun_kick&(bloodlust|buff.zenith.up)&!buff.unbroken_rhythm.up" },
+            { label = "A17", spell = "blackout_kick", when = "talent.obsidian_spiral&buff.zenith.up&!cooldown.rising_sun_kick.ready" },
+            { label = "A18", spell = "spinning_crane_kick" },
+            { label = "A19", spell = "slicing_winds", when = "talent.slicing_winds" },
+            { label = "A20", spell = "blackout_kick", when = "buff.combo_breaker.up" },
+            { label = "A21", spell = "tiger_palm", when = "resource.chi<=4&!buff.zenith.up" },
+            { label = "A22", spell = "blackout_kick", when = "talent.shadowboxing_treads" },
+            { label = "A23", spell = "rising_sun_kick" },
+            { label = "A24", spell = "blackout_kick" },
+            { label = "A24", spell = "tiger_palm" },
+        } },
+    },
+})

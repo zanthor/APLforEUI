@@ -1,0 +1,571 @@
+local _, ns = ...
+
+-------------------------------------------------------------------------------
+--  Data-driven APL engine: compiles an APL definition (Defaults/*.lua or
+--  saved variables) into a runtime with timers, counters, variables and
+--  priority lists, then evaluates it. See design.md "Conditions: building
+--  blocks" for the vocabulary.
+-------------------------------------------------------------------------------
+local Expr = ns.Expr
+local Truthy = Expr.Truthy
+local ResolveOverride = ns.ResolveOverride
+local IsOffCooldown = ns.IsOffCooldown
+local IsTalented = ns.IsTalented
+local HasBuff = ns.HasBuff
+
+local Engine = {}
+ns.Engine = Engine
+
+local NIL = {}  -- variable memo sentinel for "computed, and unknown"
+
+local function Fail(msg) error({ msg = msg }, 0) end
+
+local function Bool(v) return v and 1 or 0 end
+
+-- Never compare/do arithmetic on a secret value: report it as unknown.
+local function Clean(v)
+    if v == nil or (issecretvalue and issecretvalue(v)) then return nil end
+    return v
+end
+
+local _baseCdCache = {}
+local function BaseCooldown(spellID)
+    local dur = _baseCdCache[spellID]
+    if dur then return dur end
+    local ms = GetSpellBaseCooldown and GetSpellBaseCooldown(spellID)
+    dur = (type(ms) == "number" and ms > 0) and (ms / 1000) or 0
+    _baseCdCache[spellID] = dur
+    return dur
+end
+
+-- 0 / 1 / max from non-secret flags only: GetSpellCharges().isActive is
+-- "not at max", and a real (non-GCD) cooldown on a charge spell means 0
+-- charges (EUI_CDM_HookIconWatch.lua's Hide-CD-Text-(Charges) logic).
+-- Exact for spells with up to 2 charges; above that, 1 means "some".
+local function Charges(spellID)
+    local ci = C_Spell and C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(spellID)
+    if ci and (ci.maxCharges or 0) > 1 then
+        if not ci.isActive then return ci.maxCharges end
+        local cd = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(spellID)
+        local onRealCd = cd and cd.isActive and not cd.isOnGCD
+        return onRealCd and 0 or 1
+    end
+    return Bool(IsOffCooldown(spellID))
+end
+
+-- "Can I press it": a charge spell is ready with any charge left. Not
+-- ns.IsOffCooldown, which reads a charge spell as ready only at max charges.
+local function Ready(spellID)
+    local ci = C_Spell and C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(spellID)
+    if ci and (ci.maxCharges or 0) > 1 then return Charges(spellID) > 0 end
+    return IsOffCooldown(spellID)
+end
+
+local function ChargesFull(spellID)
+    local ci = C_Spell and C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(spellID)
+    if ci and (ci.maxCharges or 0) > 1 then return Bool(not ci.isActive) end
+    return Bool(IsOffCooldown(spellID))
+end
+
+local function Usable(spellID)
+    if not (C_Spell and C_Spell.IsSpellUsable) then return nil end
+    local usable = Clean(C_Spell.IsSpellUsable(spellID))
+    if usable == nil then return nil end
+    return Bool(usable)
+end
+
+-- "chi" / "combo_points" -> Enum.PowerType value, matched loosely against
+-- the enum's own keys so every power type works without a table here.
+local function PowerTypeFor(name)
+    local want = name:gsub("_", "")
+    for key, value in pairs(Enum.PowerType) do
+        if key:lower() == want then return value end
+    end
+    return nil
+end
+
+-------------------------------------------------------------------------------
+--  Name resolution: dotted names -> closures (ctx) -> value
+-------------------------------------------------------------------------------
+local function MakeResolver(rt)
+    local function SpellID(name)
+        local id = rt.names[name]
+        if not id then Fail("unknown name '" .. name .. "'") end
+        return id
+    end
+    local function Want(path, n, what)
+        if #path ~= n then Fail("expected " .. what) end
+    end
+
+    return function(path)
+        local head, a, b = path[1], path[2], path[3]
+
+        if head == "cooldown" then
+            Want(path, 3, "cooldown.<name>.ready")
+            if b ~= "ready" then Fail("unknown cooldown field '" .. b .. "'") end
+            local id = SpellID(a)
+            return function() return Bool(Ready(ResolveOverride(id))) end
+        elseif head == "charges" then
+            local id = SpellID(a or "")
+            if #path == 2 then return function() return Charges(id) end end
+            Want(path, 3, "charges.<name> or charges.<name>.full")
+            if b ~= "full" then Fail("unknown charges field '" .. b .. "'") end
+            return function() return ChargesFull(id) end
+        elseif head == "usable" then
+            Want(path, 2, "usable.<name>")
+            local id = SpellID(a)
+            return function() return Usable(ResolveOverride(id)) end
+        elseif head == "spell" then
+            Want(path, 3, "spell.<name>.base_cd")
+            if b ~= "base_cd" then Fail("unknown spell field '" .. b .. "'") end
+            local id = SpellID(a)
+            return function() return BaseCooldown(id) end
+        elseif head == "buff" then
+            Want(path, 3, "buff.<name>.up")
+            if b ~= "up" then Fail("unknown buff field '" .. b .. "'") end
+            local id = SpellID(a)
+            return function() return Bool(HasBuff(id)) end
+        elseif head == "talent" then
+            Want(path, 2, "talent.<name>")
+            local id = SpellID(a)
+            return function() return Bool(IsTalented(id)) end
+        elseif head == "override" then
+            Want(path, 2, "override.<name>")
+            local id = SpellID(a)
+            return function() return ResolveOverride(id) end
+        elseif head == "prev" then
+            Want(path, 2, "prev.<name>")
+            local id = SpellID(a)
+            return function()
+                local last = ns.lastCastSpellID
+                return Bool(last ~= nil and (last == id or last == ResolveOverride(id)))
+            end
+        elseif head == "channeling" then
+            Want(path, 2, "channeling.<name>")
+            local id = SpellID(a)
+            return function()
+                return Bool(ns.IsChanneling(id) or ns.IsChanneling(ResolveOverride(id)))
+            end
+        elseif head == "resource" then
+            Want(path, 2, "resource.<power>")
+            local powerType = PowerTypeFor(a)
+            if not powerType then Fail("unknown resource '" .. a .. "'") end
+            return function() return Clean(UnitPower("player", powerType)) end
+        elseif head == "timer" then
+            Want(path, 3, "timer.<name>.up or timer.<name>.remains")
+            local t = rt.timers[a]
+            if not t then Fail("unknown timer '" .. a .. "'") end
+            if b == "up" then
+                return function() return Bool(t.expiresAt ~= nil and t.expiresAt > GetTime()) end
+            elseif b == "remains" then
+                return function()
+                    if t.expiresAt == nil then return nil end
+                    return math.max(0, t.expiresAt - GetTime())
+                end
+            end
+            Fail("unknown timer field '" .. b .. "'")
+        elseif head == "counter" then
+            Want(path, 2, "counter.<name>")
+            local c = rt.counters[a]
+            if not c then Fail("unknown counter '" .. a .. "'") end
+            return function() return c.value end
+        elseif head == "variable" then
+            Want(path, 2, "variable.<name>")
+            local fn = rt.varFns[a]
+            if not fn then Fail("unknown variable '" .. a .. "' (define it above where it is used)") end
+            return function(ctx)
+                local v = ctx.vars[a]
+                if v == nil then
+                    v = fn(ctx)
+                    ctx.vars[a] = v == nil and NIL or v
+                    return v
+                end
+                if v == NIL then return nil end
+                return v
+            end
+        elseif head == "targets" then
+            Want(path, 1, "targets")
+            return function(ctx)
+                if not ctx.targets then ctx.targets = ns.GetTargetCount(rt.rangeSpellID) end
+                return ctx.targets
+            end
+        elseif head == "bloodlust" then
+            Want(path, 1, "bloodlust")
+            return function() return Bool(ns.HasBloodlust()) end
+        elseif #path == 1 and rt.names[head] then
+            local id = rt.names[head]
+            return function() return id end
+        end
+        Fail("unknown name '" .. table.concat(path, ".") .. "'")
+    end
+end
+
+-------------------------------------------------------------------------------
+--  Compile
+-------------------------------------------------------------------------------
+local TIMER_ACTIONS = { set = true, start = true, add = true, clear = true }
+local COUNTER_ACTIONS = { set = true, add = true, sub = true, reset = true }
+local TRIGGER_EVENTS = { cast = true, aura_present = true, aura_absent = true }
+
+local function CompileTracker(rt, def, kind, resolve, err)
+    local tracker = { kind = kind, name = def.name, cast = {}, aura = {} }
+    local actions = kind == "timer" and TIMER_ACTIONS or COUNTER_ACTIONS
+    if kind == "counter" then
+        tracker.initial = def.initial or 0
+        tracker.min = def.min or 0
+        tracker.max = def.max
+        tracker.value = tracker.initial
+    end
+    for i, tdef in ipairs(def.triggers or {}) do
+        local where = kind .. " " .. def.name .. " trigger " .. i
+        local id = rt.names[tdef.spell or ""]
+        local trig = { action = tdef.action }
+        local ok = true
+        if not TRIGGER_EVENTS[tdef.on] then
+            err(where, "unknown event '" .. tostring(tdef.on) .. "'"); ok = false
+        elseif not id then
+            err(where, "unknown name '" .. tostring(tdef.spell) .. "'"); ok = false
+        elseif not actions[tdef.action] then
+            err(where, "action '" .. tostring(tdef.action) .. "' is not valid for a " .. kind); ok = false
+        end
+        if ok and tdef.when then
+            local fn, e = Expr.Compile(tdef.when, resolve)
+            if fn then trig.when = fn else err(where, e); ok = false end
+        end
+        if ok and tdef.value then
+            local fn, e = Expr.Compile(tdef.value, resolve)
+            if fn then trig.value = fn else err(where, e); ok = false end
+        end
+        if ok then
+            if tdef.on == "cast" then
+                local list = tracker.cast[id]
+                if not list then list = {}; tracker.cast[id] = list end
+                list[#list + 1] = trig
+            else
+                trig.spellID = id
+                trig.present = tdef.on == "aura_present"
+                tracker.aura[#tracker.aura + 1] = trig
+            end
+        end
+    end
+    return tracker
+end
+
+-- Ranges may not overlap (design.md); a list with no max runs to infinity.
+local function CheckRanges(lists, err)
+    for i = 1, #lists do
+        for j = i + 1, #lists do
+            local x, y = lists[i], lists[j]
+            local xMax, yMax = x.max or math.huge, y.max or math.huge
+            if x.min <= yMax and y.min <= xMax then
+                err("lists", "'" .. x.name .. "' and '" .. y.name .. "' target ranges overlap")
+            end
+        end
+    end
+end
+
+function Engine.Compile(def)
+    local rt = {
+        def = def, name = def.name, specID = def.specID,
+        names = def.names or {},
+        timers = {}, counters = {}, trackers = {},
+        varFns = {}, lists = {}, errors = {},
+        ctx = { vars = {} },
+    }
+    local options = def.options or {}
+    rt.noRepeat = options.noRepeatLastCast == true
+    rt.rangeSpellID = options.rangeSpell and rt.names[options.rangeSpell]
+
+    local function err(where, msg) rt.errors[#rt.errors + 1] = where .. ": " .. tostring(msg) end
+    local resolve = MakeResolver(rt)
+
+    -- Trackers first (state tables must exist before anything references
+    -- them), then their triggers, which may read any tracker or variable.
+    for _, t in ipairs(def.timers or {}) do rt.timers[t.name] = { expiresAt = nil } end
+    for _, c in ipairs(def.counters or {}) do rt.counters[c.name] = { value = c.initial or 0 } end
+
+    for _, v in ipairs(def.variables or {}) do
+        local fn, e = Expr.Compile(v.expr, resolve)
+        if fn then rt.varFns[v.name] = fn else err("variable " .. v.name, e) end
+    end
+
+    for _, t in ipairs(def.timers or {}) do
+        local tracker = CompileTracker(rt, t, "timer", resolve, err)
+        tracker.state = rt.timers[t.name]
+        rt.trackers[#rt.trackers + 1] = tracker
+    end
+    for _, c in ipairs(def.counters or {}) do
+        local tracker = CompileTracker(rt, c, "counter", resolve, err)
+        tracker.state = rt.counters[c.name]
+        tracker.state.value = tracker.initial
+        rt.trackers[#rt.trackers + 1] = tracker
+    end
+
+    for _, ldef in ipairs(def.lists or {}) do
+        local list = { name = ldef.name, min = ldef.min or 1, max = ldef.max, entries = {} }
+        for i, edef in ipairs(ldef.entries or {}) do
+            local where = "list " .. ldef.name .. " entry " .. i .. " (" .. tostring(edef.label) .. ")"
+            local id = rt.names[edef.spell or ""]
+            if not id then
+                err(where, "unknown name '" .. tostring(edef.spell) .. "'")
+            elseif edef.enabled ~= false then
+                local entry = { spellID = id, label = edef.label or tostring(i) }
+                local ok = true
+                if edef.when and edef.when ~= "" then
+                    local fn, e = Expr.Compile(edef.when, resolve)
+                    if fn then entry.when = fn else err(where, e); ok = false end
+                end
+                if ok then list.entries[#list.entries + 1] = entry end
+            end
+        end
+        rt.lists[#rt.lists + 1] = list
+    end
+    CheckRanges(rt.lists, err)
+
+    for _, e in ipairs(rt.errors) do
+        print("|cffff6060APL for EUI|r: " .. tostring(rt.name) .. ": " .. e)
+    end
+    return rt
+end
+
+-------------------------------------------------------------------------------
+--  Evaluate
+-------------------------------------------------------------------------------
+local function PickList(rt, targets)
+    local n = targets < 1 and 1 or targets
+    for _, list in ipairs(rt.lists) do
+        if n >= list.min and (not list.max or n <= list.max) then return list end
+    end
+    return nil
+end
+
+-- Returns (spellID, label, listName), or nil when nothing applies.
+function Engine.Evaluate(rt)
+    local ctx = rt.ctx
+    wipe(ctx.vars)
+    ctx.targets = ns.GetTargetCount(rt.rangeSpellID)
+    local list = PickList(rt, ctx.targets)
+    if not list then return nil end
+    local last = ns.lastCastSpellID
+    for _, entry in ipairs(list.entries) do
+        local sid = ResolveOverride(entry.spellID)
+        if not (rt.noRepeat and sid == last) and Ready(sid)
+            and (not entry.when or Truthy(entry.when(ctx))) then
+            return sid, entry.label, list.name
+        end
+    end
+    return nil
+end
+
+-------------------------------------------------------------------------------
+--  Triggers: every tracker picks its first matching trigger, with guards and
+--  values all evaluated against pre-event state, then all picks apply.
+-------------------------------------------------------------------------------
+local _pickTracker, _pickTrig, _pickValue = {}, {}, {}
+
+local function Apply(tracker, action, v, now)
+    local s = tracker.state
+    if tracker.kind == "timer" then
+        if action == "clear" then
+            s.expiresAt = nil
+        elseif v == nil then
+            return
+        elseif action == "set" then
+            s.expiresAt = now + v
+        elseif action == "start" then
+            if s.expiresAt == nil then s.expiresAt = now + v end
+        elseif action == "add" then
+            if s.expiresAt and s.expiresAt > now then s.expiresAt = s.expiresAt + v
+            else s.expiresAt = now + v end
+        end
+    else
+        local value = s.value
+        if action == "reset" then
+            value = tracker.initial
+        elseif v == nil then
+            return
+        elseif action == "set" then
+            value = v
+        elseif action == "add" then
+            value = value + v
+        elseif action == "sub" then
+            value = value - v
+        end
+        if value < tracker.min then value = tracker.min end
+        if tracker.max and value > tracker.max then value = tracker.max end
+        s.value = value
+    end
+end
+
+local function RunPicks(rt, n)
+    local now = GetTime()
+    for i = 1, n do
+        Apply(_pickTracker[i], _pickTrig[i].action, _pickValue[i], now)
+        _pickTracker[i], _pickTrig[i], _pickValue[i] = nil, nil, nil
+    end
+end
+
+local function Matches(trig, ctx)
+    return not trig.when or Truthy(trig.when(ctx))
+end
+
+function Engine.OnCast(rt, spellID)
+    local ctx = rt.ctx
+    wipe(ctx.vars)
+    ctx.targets = nil
+    local n = 0
+    for _, tracker in ipairs(rt.trackers) do
+        local list = tracker.cast[spellID]
+        if list then
+            for _, trig in ipairs(list) do
+                if Matches(trig, ctx) then
+                    n = n + 1
+                    _pickTracker[n], _pickTrig[n] = tracker, trig
+                    _pickValue[n] = trig.value and trig.value(ctx)
+                    break
+                end
+            end
+        end
+    end
+    RunPicks(rt, n)
+end
+
+function Engine.OnAura(rt)
+    local ctx = rt.ctx
+    wipe(ctx.vars)
+    ctx.targets = nil
+    local n = 0
+    for _, tracker in ipairs(rt.trackers) do
+        for _, trig in ipairs(tracker.aura) do
+            if (HasBuff(trig.spellID) and true or false) == trig.present and Matches(trig, ctx) then
+                n = n + 1
+                _pickTracker[n], _pickTrig[n] = tracker, trig
+                _pickValue[n] = trig.value and trig.value(ctx)
+                break
+            end
+        end
+    end
+    RunPicks(rt, n)
+end
+
+function Engine.Reset(rt)
+    for _, tracker in ipairs(rt.trackers) do
+        if tracker.kind == "timer" then tracker.state.expiresAt = nil
+        else tracker.state.value = tracker.initial end
+    end
+end
+
+-- Runs an expression against a runtime's current state (for /apl expr).
+function Engine.EvalText(rt, text)
+    local fn, e = Expr.Compile(text, MakeResolver(rt))
+    if not fn then return nil, e end
+    wipe(rt.ctx.vars)
+    rt.ctx.targets = nil
+    return true, fn(rt.ctx)
+end
+
+-------------------------------------------------------------------------------
+--  APL selection: user APLs (saved variables) and built-ins (Defaults/*.lua)
+-------------------------------------------------------------------------------
+local _builtins, _builtinBySpec = {}, {}
+local _runtimes = setmetatable({}, { __mode = "k" })
+
+function ns.RegisterBuiltinAPL(def)
+    _builtins[def.id] = def
+    if not _builtinBySpec[def.specID] then _builtinBySpec[def.specID] = def end
+end
+
+local function FindDef(specID)
+    local db = ns.DB()
+    local id = db.activeAPL and db.activeAPL[specID]
+    local def = id and ((db.apls and db.apls[id]) or _builtins[id])
+    if def and def.specID == specID then return def end
+    return _builtinBySpec[specID]
+end
+
+function ns.GetActiveAPL()
+    local specID = ns.GetSpecID()
+    if not specID then return nil end
+    local def = FindDef(specID)
+    if not def then return nil end
+    local rt = _runtimes[def]
+    if not rt then
+        rt = Engine.Compile(def)
+        _runtimes[def] = rt
+    end
+    return rt
+end
+
+-------------------------------------------------------------------------------
+--  Suggestion entry point, plus parity mode: while a Lua spec module still
+--  exists for the spec, it drives suggestions unless /apl engine new is set,
+--  and the data APL runs alongside so every disagreement is logged.
+-------------------------------------------------------------------------------
+local _parity = { samples = 0, mismatches = 0, byKey = {} }
+
+local function RecordParity(oldID, oldStep, newID, newLabel)
+    _parity.samples = _parity.samples + 1
+    local a = oldID and ResolveOverride(oldID)
+    if a == newID then return end
+    _parity.mismatches = _parity.mismatches + 1
+    local key = "old " .. tostring(oldStep) .. " " .. (a and ns.SpellName(a) or "none")
+        .. "  /  new " .. tostring(newLabel) .. " " .. (newID and ns.SpellName(newID) or "none")
+    _parity.byKey[key] = (_parity.byKey[key] or 0) + 1
+end
+
+local function UseNewEngine()
+    return ns.DB().engine == "new"
+end
+
+function ns.EvaluateExpected()
+    local spec = ns.GetActiveSpec()
+    local rt = ns.GetActiveAPL()
+    if not spec or UseNewEngine() then
+        if rt then return Engine.Evaluate(rt) end
+        return nil
+    end
+    local sid, step = spec.Evaluate()
+    if rt and InCombatLockdown() then
+        local nid, nlabel = Engine.Evaluate(rt)
+        RecordParity(sid, step, nid, nlabel)
+    end
+    return sid, step
+end
+
+ns.slashCommands.engine = function(rest)
+    rest = rest:lower()
+    if rest == "new" or rest == "old" then
+        ns.DB().engine = rest == "new" and "new" or nil
+    end
+    print("APL for EUI: suggestions come from the " .. (UseNewEngine() and "new data APL" or "old Lua APL")
+        .. " (/apl engine new|old).")
+end
+
+ns.slashCommands.parity = function(rest)
+    if rest:lower() == "reset" then
+        _parity.samples, _parity.mismatches = 0, 0
+        wipe(_parity.byKey)
+        print("APL parity: reset.")
+        return
+    end
+    if UseNewEngine() then
+        print("APL parity: only recorded while the old engine drives (/apl engine old).")
+    end
+    local pct = _parity.samples > 0 and (_parity.mismatches / _parity.samples * 100) or 0
+    print(string.format("APL parity: %d in-combat samples, %d mismatches (%.1f%%).",
+        _parity.samples, _parity.mismatches, pct))
+    local keys = {}
+    for key in pairs(_parity.byKey) do keys[#keys + 1] = key end
+    table.sort(keys, function(x, y) return _parity.byKey[x] > _parity.byKey[y] end)
+    for i = 1, math.min(10, #keys) do
+        print("  " .. _parity.byKey[keys[i]] .. "x  " .. keys[i])
+    end
+end
+
+ns.slashCommands.expr = function(rest)
+    local rt = ns.GetActiveAPL()
+    if not rt then print("APL for EUI: no APL for this spec."); return end
+    local ok, v = Engine.EvalText(rt, rest)
+    if not ok then print("APL expr error: " .. tostring(v)); return end
+    print("APL expr: " .. rest .. " = " .. tostring(v))
+end

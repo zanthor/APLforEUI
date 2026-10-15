@@ -97,7 +97,7 @@ end
 local function ApplyStandaloneVisibility()
     if not _standaloneFrame then return end
     local db = DB()
-    if not db.standaloneEnabled or not ns.GetActiveSpec() then
+    if not db.standaloneEnabled or not ns.IsSpecSupported() then
         _standaloneFrame:Hide()
         return
     end
@@ -298,10 +298,19 @@ end
 -- it tracks cooldowns/resources/auras changing between casts too.
 local function UpdateSuggestWidget()
     if not _suggestFS or not _suggestIcon then return end
-    local spec = ns.GetActiveSpec()
-    if not spec then return end
     if GetTime() < _suggestSuppressUntil then return end
     local spellID, step = ns.EvaluateExpected()
+    if not spellID then
+        -- Nothing applies (design.md "No match"): show nothing.
+        if _lastSuggestedSpellID ~= nil then
+            _lastSuggestedSpellID, _lastSuggestedStep = nil, nil
+            _suggestFS._fullText = ""
+            _suggestFS:SetText("")
+            _suggestIcon:SetTexture(nil)
+        end
+        return
+    end
+    local spec = ns.GetActiveSpec()
     if spellID == _lastSuggestedSpellID and step == _lastSuggestedStep then return end
     _lastSuggestedSpellID, _lastSuggestedStep = spellID, step
     _suggestSuppressUntil = GetTime() + GetSuggestGlobalSuppression()
@@ -310,7 +319,7 @@ local function UpdateSuggestWidget()
     local info = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
     _suggestIcon:SetTexture(info and info.iconID)
     if DB().suggestTTSEnabled then
-        local alias = spec.ttsAlias and spec.ttsAlias[spellID]
+        local alias = spec and spec.ttsAlias and spec.ttsAlias[spellID]
         if alias then SpeakAlertText(alias) end
     end
     local stepKey = NormalizeStepKey(step)
@@ -324,7 +333,7 @@ end
 local function ApplySuggestVisibility()
     if not _suggestFrame then return end
     local db = DB()
-    if not db.suggestEnabled or not ns.GetActiveSpec() then
+    if not db.suggestEnabled or not ns.IsSpecSupported() then
         _suggestFrame:Hide()
         if _suggestTicker then _suggestTicker:Cancel(); _suggestTicker = nil end
         return

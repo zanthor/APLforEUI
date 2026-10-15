@@ -10,9 +10,9 @@ local ResolveOverride = ns.ResolveOverride
 local SpellName = ns.SpellName
 local SpellResolvable = ns.SpellResolvable
 
--- Spec that was active when tracking started; hooks go to it, not to
--- whatever GetActiveSpec() says mid-event.
-local _trackedSpec
+-- Spec module and specID that were active when tracking started; legacy
+-- hooks go to that module, not to whatever GetActiveSpec() says mid-event.
+local _trackedSpec, _trackedSpecID, _trackedRT
 
 -- EvaluateExpected returns (spellID, step); wrap both into one value so it can
 -- be stored/passed through the castGUID-keyed tables below without a second
@@ -112,6 +112,8 @@ local function ReportCast(spellID, expected)
 
     local spec = _trackedSpec
     if spec and spec.OnCast then spec.OnCast(spellID) end
+    local rt = ns.GetActiveAPL()
+    if rt then ns.Engine.OnCast(rt, spellID) end
 
     -- TEMP DEBUG: unconditional (not combat-gated) so the exact resolved
     -- spellID a cast reports as is visible even for precasts/dummy testing --
@@ -172,6 +174,8 @@ local function OnEvent(_, event, unit, ...)
 
     if event == "UNIT_AURA" then
         if _trackedSpec and _trackedSpec.OnAura then _trackedSpec.OnAura(...) end
+        local rt = ns.GetActiveAPL()
+        if rt then ns.Engine.OnAura(rt) end
         return
     end
 
@@ -298,6 +302,8 @@ function ns.StartTracking()
     if active then return end
     active = true
     _trackedSpec = ns.GetActiveSpec()
+    _trackedSpecID = ns.GetSpecID()
+    _trackedRT = ns.GetActiveAPL()
     eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
     eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_START", "player")
     eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
@@ -323,7 +329,8 @@ function ns.StopTracking()
     _lastReportedSpellID, _lastReportedTime = nil, 0
     ns.lastCastSpellID = nil
     if _trackedSpec and _trackedSpec.OnReset then _trackedSpec.OnReset() end
-    _trackedSpec = nil
+    if _trackedRT then ns.Engine.Reset(_trackedRT) end
+    _trackedSpec, _trackedSpecID, _trackedRT = nil, nil, nil
 end
 
 local specFrame = CreateFrame("Frame")
@@ -338,10 +345,10 @@ specFrame:SetScript("OnEvent", function(_, event, unit)
     -- Only restart on a real spec change (this event also fires on talent
     -- swaps), so a switch between two supported specs never carries one
     -- spec's hooks into the other.
-    local spec = ns.GetActiveSpec()
-    if spec ~= _trackedSpec then
+    local specID = ns.GetSpecID()
+    if specID ~= _trackedSpecID or not active then
         ns.StopTracking()
-        if spec then ns.StartTracking() end
+        if ns.IsSpecSupported() then ns.StartTracking() end
     end
     ns.ApplyStandaloneVisibility()
     ns.ApplySuggestVisibility()
