@@ -26,7 +26,6 @@ end
 
 function Store.Changed(def)
     Engine.Invalidate(def)
-    if ns.OnAPLChanged then ns.OnAPLChanged(def) end
 end
 
 function Store.Get(id)
@@ -243,4 +242,109 @@ end
 function Store.Remove(def, array, i)
     table.remove(array, i)
     Store.Changed(def)
+end
+
+-------------------------------------------------------------------------------
+--  Renaming building blocks
+-------------------------------------------------------------------------------
+
+-- A valid timer / counter / variable / short name: letters, digits, "_",
+-- not starting with a digit.
+function Store.ValidIdent(name)
+    return type(name) == "string" and name:match("^[%a_][%w_]*$") ~= nil
+end
+
+-- Every expression string in def, as (table, key) pairs, for rewriting.
+local function EachExpr(def, fn)
+    for _, v in ipairs(def.variables or {}) do fn(v, "expr") end
+    for _, group in ipairs({ def.timers or {}, def.counters or {} }) do
+        for _, t in ipairs(group) do
+            for _, trig in ipairs(t.triggers or {}) do
+                fn(trig, "when"); fn(trig, "value")
+            end
+        end
+    end
+    for _, l in ipairs(def.lists or {}) do
+        for _, e in ipairs(l.entries or {}) do fn(e, "when") end
+    end
+end
+
+-- Reads whose second segment is a spell short name (buff.<name>.up, ...).
+local SPELL_HEADS = {
+    cooldown = true, charges = true, usable = true, spell = true, buff = true,
+    talent = true, override = true, prev = true, channeling = true,
+}
+
+-- Rewrites references to a renamed building block in every expression,
+-- path by path, so separate namespaces never collide (renaming the spell
+-- name "zenith" leaves timer.zenith alone). kind: "timer" | "counter" |
+-- "variable" (written kind.name), or "name" (a spell short name: the
+-- second segment of a spell read, or a bare word such as a comparison value).
+local function RewriteRefs(def, kind, old, new)
+    local function Path(path)
+        local seg = {}
+        for part in path:gmatch("[^%.]+") do seg[#seg + 1] = part end
+        if kind == "name" then
+            if #seg == 1 and seg[1] == old then return new end
+            if SPELL_HEADS[seg[1]] and seg[2] == old then seg[2] = new; return table.concat(seg, ".") end
+        elseif seg[1] == kind and seg[2] == old then
+            seg[2] = new
+            return table.concat(seg, ".")
+        end
+        return nil
+    end
+    EachExpr(def, function(t, key)
+        if type(t[key]) == "string" then t[key] = t[key]:gsub("[%a_][%w_%.]*", Path) end
+    end)
+end
+Store.RewriteRefs = RewriteRefs
+
+-- Renames a timer / counter / variable (array element with .name) or a
+-- spell short name, updating every reference. Returns false, reason on a
+-- bad or taken name.
+function Store.RenameBlock(def, kind, item, new)
+    new = new and new:match("^%s*(.-)%s*$") or ""
+    local old = kind == "name" and item or item.name
+    if new == old then return true end
+    if not Store.ValidIdent(new) then return false, "use letters, digits and _ (not starting with a digit)" end
+    if kind == "name" then
+        if def.names[new] then return false, "that name is already used" end
+        def.names[new] = def.names[old]
+        def.names[old] = nil
+        if def.tts and def.tts[old] then def.tts[new], def.tts[old] = def.tts[old], nil end
+        for _, l in ipairs(def.lists or {}) do
+            for _, e in ipairs(l.entries or {}) do if e.spell == old then e.spell = new end end
+        end
+        for _, group in ipairs({ def.timers or {}, def.counters or {} }) do
+            for _, t in ipairs(group) do
+                for _, trig in ipairs(t.triggers or {}) do if trig.spell == old then trig.spell = new end end
+            end
+        end
+        if def.options and def.options.rangeSpell == old then def.options.rangeSpell = new end
+    else
+        local arrayKey = kind == "timer" and "timers" or kind == "counter" and "counters" or "variables"
+        for _, other in ipairs(def[arrayKey] or {}) do
+            if other ~= item and other.name == new then return false, "that name is already used" end
+        end
+        item.name = new
+    end
+    RewriteRefs(def, kind, old, new)
+    Store.Changed(def)
+    return true
+end
+
+-- New uniquely named timer / counter / variable appended to its array.
+function Store.AddBlock(def, kind)
+    local arrayKey = kind == "timer" and "timers" or kind == "counter" and "counters" or "variables"
+    def[arrayKey] = def[arrayKey] or {}
+    local taken = {}
+    for _, x in ipairs(def[arrayKey]) do taken[x.name] = true end
+    local n, name = 1, nil
+    repeat name = kind .. "_" .. n; n = n + 1 until not taken[name]
+    local item = { name = name }
+    if kind == "variable" then item.expr = "" else item.triggers = {} end
+    if kind == "counter" then item.initial, item.min = 0, 0 end
+    def[arrayKey][#def[arrayKey] + 1] = item
+    Store.Changed(def)
+    return item
 end

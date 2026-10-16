@@ -298,19 +298,6 @@ local function BuildSuggestionWidgetPage(parent, yOffset)
     return math.abs(y)
 end
 
--- Placeholder until the editor lands (design.md, phase 3).
-local function BuildAPLEditorPage(parent, yOffset)
-    local W = EllesmereUI.Widgets
-    local y = yOffset
-    local _, h
-    _, h = W:SectionHeader(parent, "APL EDITOR", y); y = y - h
-    _, h = W:DualRow(parent, y,
-        { type = "label", text = "The APL editor is not built yet." },
-        { type = "spacer" })
-    y = y - h
-    return math.abs(y)
-end
-
 if EllesmereUI and EllesmereUI.RegisterPlugin then
     EllesmereUI.RegisterPlugin("APLforEUI", {
         label = "APL for EUI",
@@ -318,11 +305,22 @@ if EllesmereUI and EllesmereUI.RegisterPlugin then
             {
                 key = "APL",
                 title = "APL",
-                description = "Create and edit APLs, and choose the active one for each spec.",
-                pages = { "APLs" },
-                buildPage = function(_, parent, yOffset)
-                    return BuildAPLEditorPage(parent, yOffset)
+                description = "Create and edit APLs, and choose the one that runs for each spec.",
+                pages = { "APLs", "Lists", "Building Blocks" },
+                -- Custom frames (condition boxes, builder rows) can't run
+                -- under the search pre-build's stub widgets.
+                searchPrebuild = false,
+                buildPage = function(pageName, parent, yOffset)
+                    -- getHeaderBuilder only tells EUI's page cache that a
+                    -- header exists; the page draws it, as EUI's own pages
+                    -- do (EUI_AuraBuffReminders_Options.lua).
+                    EllesmereUI:SetContentHeader(ns.Editor.BuildHeader)
+                    if pageName == "Lists" then return ns.Editor.BuildListsPage(parent, yOffset) end
+                    if pageName == "Building Blocks" then return ns.Editor.BuildBlocksPage(parent, yOffset) end
+                    return ns.Editor.BuildAPLsPage(parent, yOffset)
                 end,
+                getHeaderBuilder = function() return ns.Editor.BuildHeader end,
+                onModuleLeave = function() ns.EditorKit.HideSuggest() end,
             },
             {
                 key = "Widgets",

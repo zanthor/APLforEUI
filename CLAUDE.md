@@ -11,12 +11,16 @@ EllesmereUI Cooldown Manager (`OptionalDeps`), so it must also work without them
   runtime: timers, counters, variables, lists; APL selection), `Store.lua`
   (user APLs in saved variables and every editor operation on them; no UI),
   `Defaults/*.lua` (built-in APLs as data; no per-spec Lua),
-  `Tracking.lua` (cast events, stats, broker),
+  `Tracking.lua` (cast events, stats, broker), `Editor*.lua` (APL editor:
+  Kit = shared controls/state, APLs/Lists/Blocks tabs, Builder = condition
+  editor; built from EUI's Macro Factory patterns, public EUI functions only),
   `Widgets.lua`, `Glow.lua`, `Options.lua` (EUI plugin pages), `Slash.lua`.
   Files share state through `ns`, never globals.
 - Tests (offline, plain Lua 5.1; `lua.exe` sits next to `luac.exe`; WoW API
   mocks shared in `tests/mock_wow.lua`): `tests/expr_test.lua .` (parser),
-  `tests/editor_logic_test.lua .` (formatter, builder forms, store) and
+  `tests/editor_logic_test.lua .` (formatter, builder forms, store),
+  `tests/ui_smoke_test.lua .` (every editor page against a recording mock
+  EllesmereUI, driven like a user; catches errors, not layout) and
   `tests/parity_sim.lua .` (frozen `tests/legacy_Monk_Windwalker.lua` vs the
   data APL; `EAGER=1` must give 0 mismatches). Keep UI-free logic in
   `Store.lua`/`Engine.lua`/`Expression.lua` so it stays testable. Not deployed.

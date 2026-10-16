@@ -5,16 +5,43 @@ return function(dir)
     local S = { now = 1000, chi = 3, buffs = {}, cd = {}, talents = {}, overrides = {}, zenCharges = 2, targets = 1,
         spellNames = { [113656] = "Fists of Fury", [100780] = "Tiger Palm", [1249625] = "Zenith" } }
 
-    -- generic frame stub: any method is a no-op
-    local FrameMT = { __index = function() return function() end end }
-    local function Stub() return setmetatable({}, FrameMT) end
+    -- Frame stub: unknown methods are no-ops; the ones UI code reads back
+    -- (sizes, levels, text, scripts, enabled state) behave like a frame.
+    local FrameMethods = {
+        GetFrameLevel = function() return 5 end,
+        GetWidth = function() return 800 end,
+        GetHeight = function() return 50 end,
+        GetEffectiveScale = function() return 1 end,
+        GetStringWidth = function() return 10 end,
+        SetText = function(self, t) self._text = t end,
+        GetText = function(self) return self._text end,
+        SetScript = function(self, k, f) self._scripts = self._scripts or {}; self._scripts[k] = f end,
+        HookScript = function(self, k, f) self._scripts = self._scripts or {}; self._scripts[k] = self._scripts[k] or f end,
+        GetScript = function(self, k) return self._scripts and self._scripts[k] end,
+        SetEnabled = function(self, v) self._disabled = not v end,
+        IsEnabled = function(self) return not self._disabled end,
+        IsShown = function() return false end,
+        HasFocus = function() return false end,
+        GetParent = function(self) return self._parent end,
+    }
+    local function Noop() end
+    local FrameMT = { __index = function(_, k)
+        if FrameMethods[k] then return FrameMethods[k] end
+        if type(k) == "string" and k:sub(1, 1) == "_" then return nil end
+        return Noop
+    end }
+    local function Stub(parent) return setmetatable({ _parent = parent }, FrameMT) end
+    FrameMethods.CreateTexture = function(self) return Stub(self) end
+    FrameMethods.CreateFontString = function(self) return Stub(self) end
 
     function wipe(t) for k in pairs(t) do t[k] = nil end return t end
     GetTime = function() return S.now end
     GetSpecialization = function() return 1 end
     GetSpecializationInfo = function() return 269 end
     InCombatLockdown = function() return true end
-    CreateFrame = function() return Stub() end
+    CreateFrame = function(_, _, parent) return Stub(parent) end
+    S.Stub = Stub
+    GetSpecializationInfoByID = function(id) if id == 269 then return 269, "Windwalker", "", 0, "DAMAGER", "MONK", "Monk" end end
     UIParent = Stub()
     C_Timer = { NewTicker = function() return Stub() end }
     SlashCmdList = {}

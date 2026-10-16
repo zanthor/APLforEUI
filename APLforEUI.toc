@@ -14,5 +14,10 @@ Defaults\Monk_Windwalker.lua
 Tracking.lua
 Widgets.lua
 Glow.lua
+EditorKit.lua
+EditorAPLs.lua
+EditorBuilder.lua
+EditorLists.lua
+EditorBlocks.lua
 Options.lua
 Slash.lua

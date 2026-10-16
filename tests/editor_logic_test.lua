@@ -159,4 +159,28 @@ Check(Engine.ActiveDef(269) == builtin, "deleting the active APL falls back to t
 Check(not Store.Delete(builtin), "built-ins can't be deleted")
 Check(#Store.ListForSpec(269) == 2 and Store.ListForSpec(269)[1] == builtin, "list: built-in first")
 
+-- Renames rewrite references.
+local ww = Store.Duplicate(builtin)
+local xuen
+for _, t in ipairs(ww.timers) do if t.name == "xuen" then xuen = t end end
+Check(Store.RenameBlock(ww, "timer", xuen, "xuen_cd"), "rename timer")
+local soon
+for _, v in ipairs(ww.variables) do if v.name == "xuen_soon" then soon = v end end
+Check(soon.expr == "timer.xuen_cd.remains<=10", "timer reference rewritten: " .. soon.expr)
+Check(Store.RenameBlock(ww, "variable", soon, "xuen_is_soon"), "rename variable")
+Check(ww.lists[1].entries[4].when:find("variable.xuen_is_soon", 1, true) ~= nil, "variable reference rewritten")
+Check(Store.RenameBlock(ww, "name", "zenith", "zen"), "rename short name")
+Check(ww.names.zen == 1249625 and ww.names.zenith == nil, "names table updated")
+Check(ww.lists[1].entries[2].spell == "zen" and ww.lists[1].entries[2].when:find("buff.zen.up", 1, true), "entry spell and condition updated")
+Check(ww.tts.zen == "Zenith", "tts follows the rename")
+local stillHasStomp = false
+for _, v in ipairs(ww.variables) do if v.expr:find("zenith_stomp_talent", 1, true) then stillHasStomp = true end end
+Check(stillHasStomp, "longer names that start with the old one are untouched")
+Check(not Store.RenameBlock(ww, "name", "zen", "tiger_palm"), "rename to a taken name refused")
+Check(not Store.RenameBlock(ww, "variable", soon, "2bad"), "invalid identifier refused")
+Check(#Engine.GetRuntime(ww).errors == 0, "renamed APL still compiles: " .. tostring(Engine.GetRuntime(ww).errors[1]))
+local added = Store.AddBlock(ww, "timer")
+Check(added.name == "timer_1" and #added.triggers == 0, "add timer")
+Check(Store.AddBlock(ww, "timer").name == "timer_2", "add timer numbering")
+
 print_real(fails == 0 and "ALL PASS" or (fails .. " failures"))
