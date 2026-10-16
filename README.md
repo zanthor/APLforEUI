@@ -114,6 +114,6 @@ Please don't guess spell IDs. Midnight has many spells that share a name but use
   The other suites in [`tests/`](tests/) run the same way: `ui_smoke_test`, `editor_logic_test`, `exchange_test`, `groups_test`, `holds_test`, `glow_test` and `harvest_test`.
 - Design notes and decisions: [`design.md`](design.md).
 
-## Author
+## Author and license
 
-zanthor
+zanthor. Released under the [MIT License](LICENSE).
