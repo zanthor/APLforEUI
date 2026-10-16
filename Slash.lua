@@ -63,6 +63,53 @@ ns.slashCommands.secrets = function()
         .. " energy=" .. Q(S.ShouldUnitPowerBeSecret, "player", Enum.PowerType.Energy))
 end
 
+-- The Cooldown Manager icons the CDM glow (Glow.lua) can see: Blizzard's
+-- Essential/Utility viewer item frames (EUI restyles and anchors these), with
+-- the spell IDs Blizzard's own methods report, flagging secret values.
+ns.slashCommands.cdm = function()
+    local function Read(item, method)
+        local fn = item[method]
+        if not fn then return "n/a" end
+        local ok, v = pcall(fn, item)
+        if not ok then return "error" end
+        if v == nil then return "nil" end
+        if issecretvalue and issecretvalue(v) then return "SECRET" end
+        return tostring(v)
+    end
+    local expected = ns.EvaluateExpected()
+    local restricted = C_Secrets and C_Secrets.ShouldCooldownsBeSecret and C_Secrets.ShouldCooldownsBeSecret()
+    print(string.format("APL cdm: inCombat=%s cooldownsSecret=%s suggestion=%s (%s)",
+        tostring(InCombatLockdown()), tostring(restricted), tostring(expected),
+        expected and ns.SpellName(expected) or "none"))
+    local total, shown, secret, match = 0, 0, 0, 0
+    for _, viewerName in ipairs({ "EssentialCooldownViewer", "UtilityCooldownViewer" }) do
+        local viewer = _G[viewerName]
+        local items = viewer and viewer.GetItemFrames and viewer:GetItemFrames()
+        if not items then
+            print("APL cdm: " .. viewerName .. " not found")
+        else
+            for i, item in ipairs(items) do
+                total = total + 1
+                local isShown = item.IsShown and item:IsShown()
+                if isShown then shown = shown + 1 end
+                local parent = item.GetParent and item:GetParent()
+                local pname = parent and parent.GetName and parent:GetName() or "?"
+                local sid, base = Read(item, "GetSpellID"), Read(item, "GetBaseSpellID")
+                if sid == "SECRET" or base == "SECRET" then secret = secret + 1 end
+                local isMatch = expected and (tostring(expected) == sid or tostring(expected) == base
+                    or tostring(expected) == tostring(ns.ResolveOverride(tonumber(base) or 0)))
+                if isMatch then match = match + 1 end
+                local idNum = tonumber(sid) or tonumber(base)
+                print(string.format("  %s #%d shown=%s parent=%s spell=%s base=%s %s%s",
+                    viewerName:gsub("CooldownViewer", ""), i, tostring(isShown), pname, sid, base,
+                    idNum and ns.SpellName(idNum) or "", isMatch and "  <== suggestion" or ""))
+            end
+        end
+    end
+    print(string.format("APL cdm: %d frames, %d shown, %d with secret IDs, %d matching the suggestion",
+        total, shown, secret, match))
+end
+
 SLASH_APLFOREUI1 = "/apl"
 SlashCmdList.APLFOREUI = function(msg)
     local cmd, rest = msg:match("^(%S*)%s*(.-)%s*$")

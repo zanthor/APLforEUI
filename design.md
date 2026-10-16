@@ -22,6 +22,7 @@ class/spec, edited in game inside the EllesmereUI plugin section.
 | Saved data | Per account (`APLforEUIDB`). |
 | Compliance | Unchanged: "did you press what we suggested", one rolling 60s window across all lists (opener, ST, AOE). |
 | Predictive (+1) | Benched. `predictive.md` stays for later. |
+| EUI dependency | Stock EllesmereUI only. The CDM glow finds the suggested spell's icon among Blizzard's Essential/Utility viewer item frames (EUI's CDM restyles those; IDs verified readable in restricted combat) and draws with `EllesmereUI.Glows`, restriction-safe styles only. Settings: Widgets > CDM Glow. Icons EUI adds itself (outside Blizzard's tracked set) can't glow. |
 
 ## Conditions: building blocks
 

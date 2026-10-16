@@ -149,6 +149,76 @@ local function BuildStatusWidgetPage(parent, yOffset)
     return math.abs(y)
 end
 
+-- CDM glow (Glow.lua): glows the suggested spell's Cooldown Manager icon.
+local function BuildCDMGlowPage(parent, yOffset)
+    local W = EllesmereUI.Widgets
+    local y = yOffset
+    local _, h
+
+    _, h = W:SectionHeader(parent, "CDM GLOW", y); y = y - h
+
+    local function Cfg(k) return DB()[k] end
+    local function Set(k, v) DB()[k] = v; ns.ApplyCDMGlow() end
+    local off = function() return not ns.CDMGlowEnabled() end
+
+    local styleValues, styleOrder = {}, {}
+    local styles = EllesmereUI.Glows and EllesmereUI.Glows.STYLES or {}
+    for _, idx in ipairs(ns.CDM_GLOW_STYLES) do
+        if styles[idx] then
+            styleValues[idx] = styles[idx].name
+            styleOrder[#styleOrder + 1] = idx
+        end
+    end
+    local function Style() return Cfg("cdmGlowStyle") or 6 end
+    local function IsBlackout() return styles[Style()] and styles[Style()].solidFill end
+
+    _, h = W:DualRow(parent, y,
+        { type = "toggle", text = "Enabled",
+          tooltip = "Glow the suggested spell's icon in the Cooldown Manager, in combat. Works for spells tracked by the Cooldown Manager (Essential and Utility bars).",
+          getValue = function() return ns.CDMGlowEnabled() end,
+          setValue = function(v)
+              if v then Set("cdmGlow", nil) else Set("cdmGlow", false) end
+              EllesmereUI:RefreshPage()
+          end },
+        { type = "dropdown", text = "Glow Style", values = styleValues, order = styleOrder,
+          tooltip = "Only styles that keep animating in restricted combat are offered.",
+          disabled = off, disabledTooltip = "Enabled",
+          getValue = Style,
+          setValue = function(v) Set("cdmGlowStyle", v); EllesmereUI:RefreshPage() end })
+    y = y - h
+
+    _, h = W:DualRow(parent, y,
+        { type = "toggle", text = "Custom Color",
+          tooltip = "Off: the style's own colors (black for Blackout).",
+          disabled = off, disabledTooltip = "Enabled",
+          getValue = function() return Cfg("cdmGlowColor") ~= nil end,
+          setValue = function(v)
+              Set("cdmGlowColor", v and { r = 1, g = 0.82, b = 0 } or nil)
+              EllesmereUI:RefreshPage()
+          end },
+        { type = "colorpicker", text = "Glow Color", hasAlpha = false,
+          disabled = function() return off() or Cfg("cdmGlowColor") == nil end,
+          disabledTooltip = "Custom Color",
+          getValue = function()
+              local c = Cfg("cdmGlowColor") or { r = 1, g = 0.82, b = 0 }
+              return c.r, c.g, c.b
+          end,
+          setValue = function(r, g, b) Set("cdmGlowColor", { r = r, g = g, b = b }) end })
+    y = y - h
+
+    -- Always shown; only unlocked for the Blackout style.
+    _, h = W:DualRow(parent, y,
+        { type = "slider", text = "Blackout Opacity", min = 0.1, max = 1.0, step = 0.05,
+          disabled = function() return off() or not IsBlackout() end,
+          disabledTooltip = "This option only applies to the Blackout glow style.",
+          getValue = function() return Cfg("cdmGlowAlpha") or 0.5 end,
+          setValue = function(v) Set("cdmGlowAlpha", v) end },
+        { type = "spacer" })
+    y = y - h
+
+    return math.abs(y)
+end
+
 local function BuildSuggestionWidgetPage(parent, yOffset)
     local W = EllesmereUI.Widgets
     local y = yOffset
@@ -326,10 +396,13 @@ if EllesmereUI and EllesmereUI.RegisterPlugin then
                 key = "Widgets",
                 title = "Widgets",
                 description = "Standalone on-screen displays for the ST/AOE compliance stats and the live APL suggestion.",
-                pages = { "Status Widget", "Suggestion Widget" },
+                pages = { "Status Widget", "Suggestion Widget", "CDM Glow" },
                 buildPage = function(pageName, parent, yOffset)
                     if pageName == "Suggestion Widget" then
                         return BuildSuggestionWidgetPage(parent, yOffset)
+                    end
+                    if pageName == "CDM Glow" then
+                        return BuildCDMGlowPage(parent, yOffset)
                     end
                     return BuildStatusWidgetPage(parent, yOffset)
                 end,

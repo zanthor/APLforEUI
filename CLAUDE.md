@@ -6,6 +6,12 @@ hard-coded Windwalker Monk APL to user-editable APLs for any spec (plan:
 `design.md`). Optional integration with EllesmereUI and the
 EllesmereUI Cooldown Manager (`OptionalDeps`), so it must also work without them.
 
+- EllesmereUI dependency: stock release only (no custom build). The APL
+  section uses `EllesmereUI.RegisterPlugin`; the CDM glow (`Glow.lua`) finds
+  icons through Blizzard's Essential/Utility viewer item frames (which EUI's
+  CDM restyles) and draws with `EllesmereUI.Glows`. Follow EUI's rules for
+  those frames (EllesmereUICdmHooks.lua): never reparent, rescale, hide or
+  show them, never write keys onto them; use our own overlay frames.
 - Code (TOC load order): `Core.lua` (shared helpers, `ns.slashCommands`),
   `Expression.lua` (SimC-style parser/compiler), `Engine.lua` (data APL
   runtime: timers, counters, variables, lists; APL selection), `Store.lua`
@@ -24,6 +30,7 @@ EllesmereUI Cooldown Manager (`OptionalDeps`), so it must also work without them
   `tests/exchange_test.lua .` (import/export round trip and errors),
   `tests/groups_test.lua .` (list groups: priority, fall-through, openers),
   `tests/holds_test.lua .` (holding cooldowns through Tracking's events),
+  `tests/glow_test.lua .` (CDM glow and its settings page),
   `tests/ui_smoke_test.lua .` (every editor page against a recording mock
   EllesmereUI, driven like a user; catches errors, not layout) and
   `tests/parity_sim.lua .` (frozen `tests/legacy_Monk_Windwalker.lua` vs the
@@ -69,7 +76,9 @@ it and could later be upstreamed:
 - Before committing, run `luac -p` on every Lua file (Lua 5.1 compile check;
   the `LUAC` env var points at it). After moving code between files, also
   check `luac -l -p <file>` for GETGLOBAL/SETGLOBAL names that should have
-  been locals or `ns.` fields. Run both tests after any engine/APL change.
+  been locals or `ns.` fields. Run all tests after any change. Run
+  `grep -nE "and (false|nil) or" *.lua`: `x and false or y` never yields
+  false in Lua (this has caused four bugs here); write an if/else instead.
   Review the diff against the rules above and say plainly if anything fails.
 - Commit messages: `feat: ...` / `fix: ...` style. Ask before pushing.
 - Bump `## Version` in the TOC when the user asks for a release.
