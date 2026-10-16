@@ -226,3 +226,147 @@ function Expr.Compile(src, resolve)
     if type(res) == "table" then return nil, res.msg end
     error(res, 0)
 end
+
+-------------------------------------------------------------------------------
+--  AST -> text, with only the parentheses precedence needs. Compact like the
+--  built-in APLs ("a&!b"), so builder output and hand-written text match.
+-------------------------------------------------------------------------------
+local function Prec(node)
+    local k = node.k
+    if k == "or" then return 1 end
+    if k == "and" then return 2 end
+    if k == "cmp" then return 3 end
+    if k == "arith" then return (node.op == "+" or node.op == "-") and 4 or 5 end
+    if k == "not" or k == "neg" then return 6 end
+    return 7
+end
+
+local function FormatNumber(v)
+    if v == math.floor(v) and math.abs(v) < 1e15 then return string.format("%d", v) end
+    return tostring(v)
+end
+
+local function Format(node)
+    local k = node.k
+    if k == "num" then return FormatNumber(node.v) end
+    if k == "ref" then return table.concat(node.path, ".") end
+    if k == "call" then
+        local args = {}
+        for i, a in ipairs(node.args) do args[i] = Format(a) end
+        return node.name .. "(" .. table.concat(args, ",") .. ")"
+    end
+    if k == "not" or k == "neg" then
+        local inner = Format(node.a)
+        if Prec(node.a) < 6 then inner = "(" .. inner .. ")" end
+        return (k == "not" and "!" or "-") .. inner
+    end
+    local p = Prec(node)
+    local op = (k == "and" and "&") or (k == "or" and "|") or node.op
+    local l, r = Format(node.a), Format(node.b)
+    local lp, rp = Prec(node.a), Prec(node.b)
+    -- & and | are associative; everything else needs the right side wrapped
+    -- at equal precedence, and comparisons don't chain at all.
+    if lp < p or (k == "cmp" and lp == p) then l = "(" .. l .. ")" end
+    if rp < p or (rp == p and k ~= "and" and k ~= "or") then r = "(" .. r .. ")" end
+    return l .. op .. r
+end
+
+function Expr.Format(ast) return Format(ast) end
+
+-------------------------------------------------------------------------------
+--  Builder form: what the point-and-click builder edits. A form is a group
+--    { k = "group", op = "and"|"or", neg = bool, items = { item, ... } }
+--  and an item is a nested group or a row
+--    { k = "cond", neg = bool, ref = "buff.hotjs.up", op = "<="|nil, value = "2"|nil }
+--  Text that doesn't fit (arithmetic, functions, a number on the left of a
+--  comparison) has no form; the editor then keeps it text-only.
+-------------------------------------------------------------------------------
+local function IsValue(n)
+    return n.k == "num" or n.k == "ref" or (n.k == "neg" and n.a.k == "num")
+end
+
+local ToItem
+
+local function Flatten(node, op, items)
+    if node.k == op then
+        return Flatten(node.a, op, items) and Flatten(node.b, op, items)
+    end
+    local item = ToItem(node)
+    if not item then return false end
+    items[#items + 1] = item
+    return true
+end
+
+ToItem = function(node)
+    local k = node.k
+    if k == "and" or k == "or" then
+        local g = { k = "group", op = k, neg = false, items = {} }
+        if not Flatten(node, k, g.items) then return nil end
+        return g
+    elseif k == "not" then
+        local item = ToItem(node.a)
+        if not item then return nil end
+        item.neg = not item.neg
+        return item
+    elseif k == "ref" then
+        return { k = "cond", neg = false, ref = Format(node) }
+    elseif k == "cmp" and node.a.k == "ref" and IsValue(node.b) then
+        return { k = "cond", neg = false, ref = Format(node.a), op = node.op, value = Format(node.b) }
+    end
+    return nil
+end
+
+-- Text -> form. Returns nil plus a reason when the text has no form
+-- (parse error, or a shape the builder can't show).
+function Expr.ToForm(src)
+    if not src or src:match("^%s*$") then
+        return { k = "group", op = "and", neg = false, items = {} }
+    end
+    local ast, err = Expr.Parse(src)
+    if not ast then return nil, err end
+    local item = ToItem(ast)
+    if not item then return nil, "uses arithmetic or functions; edit it as text" end
+    if item.k == "group" and not item.neg then return item end
+    return { k = "group", op = "and", neg = false, items = { item } }
+end
+
+-- Returns text and its precedence (for the parent's parenthesis choice).
+-- Incomplete rows (no read picked) and empty groups are left out.
+local function ItemText(item)
+    local text, prec
+    if item.k == "cond" then
+        if not item.ref or item.ref == "" then return nil end
+        if item.op and item.value and item.value ~= "" then
+            text, prec = item.ref .. item.op .. item.value, 3
+        else
+            text, prec = item.ref, 7
+        end
+    else
+        local parts, partPrec = {}, 7
+        local myPrec = item.op == "or" and 1 or 2
+        for _, child in ipairs(item.items or {}) do
+            local t, p = ItemText(child)
+            if t then
+                if p < myPrec then t, p = "(" .. t .. ")", 7 end
+                parts[#parts + 1] = t
+                partPrec = p
+            end
+        end
+        if #parts == 0 then return nil end
+        if #parts == 1 then
+            text, prec = parts[1], partPrec
+        else
+            text, prec = table.concat(parts, item.op == "or" and "|" or "&"), myPrec
+        end
+    end
+    if item.neg then
+        if prec < 6 then text = "(" .. text .. ")" end
+        text, prec = "!" .. text, 6
+    end
+    return text, prec
+end
+
+-- Form -> text ("" for an empty form, meaning "always").
+function Expr.FromForm(form)
+    return (ItemText(form)) or ""
+end

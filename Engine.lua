@@ -310,13 +310,21 @@ function Engine.Compile(def)
 
     for _, ldef in ipairs(def.lists or {}) do
         local list = { name = ldef.name, min = ldef.min or 1, max = ldef.max, entries = {} }
+        local prefix = ldef.prefix
+        if not Engine.ValidPrefix(prefix) then
+            err("list " .. tostring(ldef.name), "prefix must be 1-3 characters")
+            prefix = "?"
+        end
         for i, edef in ipairs(ldef.entries or {}) do
-            local where = "list " .. ldef.name .. " entry " .. i .. " (" .. tostring(edef.label) .. ")"
+            -- Label = list prefix + position; disabled entries keep their
+            -- number so toggling one doesn't renumber the rest.
+            local label = prefix .. i
+            local where = "list " .. tostring(ldef.name) .. " entry " .. label
             local id = rt.names[edef.spell or ""]
             if not id then
                 err(where, "unknown name '" .. tostring(edef.spell) .. "'")
             elseif edef.enabled ~= false then
-                local entry = { spellID = id, label = edef.label or tostring(i) }
+                local entry = { spellID = id, label = label }
                 local ok = true
                 if edef.when and edef.when ~= "" then
                     local fn, e = Expr.Compile(edef.when, resolve)
@@ -328,11 +336,13 @@ function Engine.Compile(def)
         rt.lists[#rt.lists + 1] = list
     end
     CheckRanges(rt.lists, err)
-
-    for _, e in ipairs(rt.errors) do
-        print("|cffff6060APL for EUI|r: " .. tostring(rt.name) .. ": " .. e)
-    end
     return rt
+end
+
+function Engine.ValidPrefix(prefix)
+    if type(prefix) ~= "string" or prefix == "" then return false end
+    local len = strlenutf8 and strlenutf8(prefix) or #prefix
+    return len <= 3
 end
 
 -------------------------------------------------------------------------------
@@ -488,23 +498,61 @@ function ns.RegisterBuiltinAPL(def)
     if not _builtinBySpec[def.specID] then _builtinBySpec[def.specID] = def end
 end
 
-local function FindDef(specID)
+function Engine.Builtins() return _builtins end
+function Engine.BuiltinForSpec(specID) return _builtinBySpec[specID] end
+
+function Engine.FindDefByID(id)
+    local db = ns.DB()
+    return (db.apls and db.apls[id]) or _builtins[id]
+end
+
+-- The APL that runs for specID: the chosen one, else the spec's built-in.
+function Engine.ActiveDef(specID)
     local db = ns.DB()
     local id = db.activeAPL and db.activeAPL[specID]
-    local def = id and ((db.apls and db.apls[id]) or _builtins[id])
+    local def = id and Engine.FindDefByID(id)
     if def and def.specID == specID then return def end
     return _builtinBySpec[specID]
 end
 
-function ns.GetActiveAPL()
-    local specID = ns.GetSpecID()
-    if not specID then return nil end
-    local def = FindDef(specID)
-    if not def then return nil end
+-- Compiled runtime for a definition, cached until Invalidate (any edit).
+function Engine.GetRuntime(def)
     local rt = _runtimes[def]
     if not rt then
         rt = Engine.Compile(def)
         _runtimes[def] = rt
+    end
+    return rt
+end
+
+function Engine.Invalidate(def)
+    _runtimes[def] = nil
+end
+
+-- Live validation for the editor: does this text compile against def's
+-- current names, timers, counters and variables?
+function Engine.CheckExpr(def, text)
+    if not text or text:match("^%s*$") then return true end
+    local fn, e = Expr.Compile(text, MakeResolver(Engine.GetRuntime(def)))
+    if fn then return true end
+    return false, e
+end
+
+-- Errors are shown live in the editor; chat only hears about them once per
+-- APL per session, when it first becomes the running APL.
+local _reportedErrors = setmetatable({}, { __mode = "k" })
+
+function ns.GetActiveAPL()
+    local specID = ns.GetSpecID()
+    if not specID then return nil end
+    local def = Engine.ActiveDef(specID)
+    if not def then return nil end
+    local rt = Engine.GetRuntime(def)
+    if not _reportedErrors[def] then
+        _reportedErrors[def] = true
+        for _, e in ipairs(rt.errors) do
+            print("|cffff6060APL for EUI|r: " .. tostring(rt.name) .. ": " .. e)
+        end
     end
     return rt
 end

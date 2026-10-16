@@ -8,15 +8,18 @@ EllesmereUI Cooldown Manager (`OptionalDeps`), so it must also work without them
 
 - Code (TOC load order): `Core.lua` (shared helpers, `ns.slashCommands`),
   `Expression.lua` (SimC-style parser/compiler), `Engine.lua` (data APL
-  runtime: timers, counters, variables, lists; APL selection),
+  runtime: timers, counters, variables, lists; APL selection), `Store.lua`
+  (user APLs in saved variables and every editor operation on them; no UI),
   `Defaults/*.lua` (built-in APLs as data; no per-spec Lua),
   `Tracking.lua` (cast events, stats, broker),
   `Widgets.lua`, `Glow.lua`, `Options.lua` (EUI plugin pages), `Slash.lua`.
   Files share state through `ns`, never globals.
-- Tests (offline, plain Lua 5.1 with mocked WoW API; `lua.exe` sits next to
-  `luac.exe`): `tests/expr_test.lua .` (parser) and `tests/parity_sim.lua .`
-  (frozen `tests/legacy_Monk_Windwalker.lua` vs the data APL; `EAGER=1`
-  must give 0 mismatches). Not deployed.
+- Tests (offline, plain Lua 5.1; `lua.exe` sits next to `luac.exe`; WoW API
+  mocks shared in `tests/mock_wow.lua`): `tests/expr_test.lua .` (parser),
+  `tests/editor_logic_test.lua .` (formatter, builder forms, store) and
+  `tests/parity_sim.lua .` (frozen `tests/legacy_Monk_Windwalker.lua` vs the
+  data APL; `EAGER=1` must give 0 mismatches). Keep UI-free logic in
+  `Store.lua`/`Engine.lua`/`Expression.lua` so it stays testable. Not deployed.
 - Design notes: `design.md` (configurable APL plan), `monkapl.md` (the
   Windwalker APL), `predictive.md` (benched +1 forecaster data). Do not guess spell data; ask the user or
   leave it marked missing.

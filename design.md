@@ -144,6 +144,18 @@ APLforEUIDB.apls[id] = <user APL>;  APLforEUIDB.activeAPL[specID] = id
 4. **Import/Export.**
 5. **Openers.** Combat-start lists that run for X actions or X seconds.
 
+## Editor (phase 3)
+
+| Topic | Decision |
+|---|---|
+| Layout | Fixed header with an APL picker over three tabs: **APLs** (manage), **Lists** (lists and entries), **Building blocks** (names, variables, timers, counters, TTS, options). Accordion rows (header: label, up/down, on/off, delete; click to expand), mirroring EUI's Macro Factory page. |
+| Scope | Defaults to the current spec's APLs; the picker can switch to any spec. Active choice stays per spec. |
+| Built-ins | Read-only; "Duplicate to edit" makes a user copy. |
+| Saving | Edits write straight to saved variables and recompile the APL; no Save button (the panel cannot open in combat). |
+| Spell names | Typing a spell name or ID in an entry auto-creates its short name (Fists of Fury -> `fists_of_fury`) if the APL doesn't have one. |
+| Labels | Each list has a required 1-3 character **prefix**; an entry's label is prefix + its position in the list (`ST3`, `AOE12`), renumbering on reorder. No free-text labels. |
+| Conditions | Text box with autocomplete and live validation, **and** a point-and-click builder, both built now. The builder edits AND/OR groups of `[!] read [op value]` rows; text that doesn't fit that shape (arithmetic, `max()`) stays text-only and the builder says so. Both views edit the same stored text. |
+
 ## Open items
 
 1. Import/export format: EUI-style profile string, or SimC-style text.

@@ -9,6 +9,7 @@
 Core.lua
 Expression.lua
 Engine.lua
+Store.lua
 Defaults\Monk_Windwalker.lua
 Tracking.lua
 Widgets.lua
