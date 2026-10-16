@@ -14,6 +14,17 @@ ns.EditorKit = Kit
 local ICONS = "Interface\\AddOns\\EllesmereUI\\media\\icons\\"
 Kit.ROW_H = 50
 
+-- "|" starts an escape code in WoW text, so an edit box stores a typed or
+-- pasted "|" as "||". Write text in escaped and read it back collapsed;
+-- APL text never contains a real "||" (it isn't an operator).
+function Kit.SetEditText(edit, text)
+    edit:SetText(((text or ""):gsub("|", "||")))
+end
+
+function Kit.GetEditText(edit)
+    return ((edit:GetText() or ""):gsub("|+", "|"))
+end
+
 -------------------------------------------------------------------------------
 --  Editor state: which spec/APL is being edited and which rows are open.
 --  Open rows are remembered by table identity, so they survive rebuilds.
@@ -234,10 +245,10 @@ end
 function Kit.AttachSuggest(edit, items)
     local function Pick(text)
         HideSuggest()
-        local cur = edit:GetText() or ""
+        local cur = Kit.GetEditText(edit)
         local token = TokenAt(cur)
-        edit:SetText(cur:sub(1, #cur - #token) .. text)
-        edit:SetCursorPosition(#edit:GetText())
+        Kit.SetEditText(edit, cur:sub(1, #cur - #token) .. text)
+        edit:SetCursorPosition(#(edit:GetText() or ""))
     end
     local function Show()
         if not suggest then
@@ -249,7 +260,7 @@ function Kit.AttachSuggest(edit, items)
             suggest.rows = {}
             suggest:Hide()
         end
-        local list = items(TokenAt(edit:GetText() or ""))
+        local list = items(TokenAt(Kit.GetEditText(edit)))
         if #list == 0 then HideSuggest() return end
         for i, it in ipairs(list) do
             local r = suggest.rows[i]
@@ -326,7 +337,7 @@ function Kit.ExprBox(parent, y, o)
     edit:SetAutoFocus(false)
     edit:SetFont(EllesmereUI.EXPRESSWAY, 12, "")
     edit:SetTextColor(1, 1, 1, o.editable == false and 0.5 or 0.9)
-    edit:SetText(o.get() or "")
+    Kit.SetEditText(edit, o.get())
     edit:SetEnabled(o.editable ~= false)
 
     local status = EllesmereUI.MakeFont(f, 11, nil, 1, 1, 1, 0.7)
@@ -352,17 +363,17 @@ function Kit.ExprBox(parent, y, o)
 
     local committed = o.get() or ""
     local function Commit()
-        local text = (edit:GetText() or ""):gsub("[\r\n]+", " ")
+        local text = Kit.GetEditText(edit):gsub("[\r\n]+", " ")
         text = text:match("^%s*(.-)%s*$")
         if text ~= committed then
             committed = text
             o.set(text)
         end
     end
-    edit:SetScript("OnTextChanged", function(self) ShowStatus(self:GetText() or "") end)
+    edit:SetScript("OnTextChanged", function(self) ShowStatus(Kit.GetEditText(self)) end)
     edit:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     edit:SetScript("OnEscapePressed", function(self)
-        self:SetText(committed)
+        Kit.SetEditText(self, committed)
         self:ClearFocus()
     end)
     edit:SetScript("OnEditFocusGained", function()
@@ -446,4 +457,98 @@ function Kit.Problems(parent, y, def)
     end
     if #rt.errors > 8 then y = Kit.Note(parent, y, "...and " .. (#rt.errors - 8) .. " more.") end
     return y
+end
+
+-------------------------------------------------------------------------------
+--  Text popup for export (read-only, pre-selected for Ctrl+C) and import
+--  (paste, then Import). A plain multi-line box with no byte cap: EUI's
+--  profile import absorber keeps only what OnChar delivers, and this format
+--  needs its newlines. Built once on EUI's popup shell.
+--  o = { title, subtitle, text, readOnly, onConfirm(text) -> ok, errorText }
+-------------------------------------------------------------------------------
+local textPopup
+
+local function BuildTextPopup()
+    local W_, H_ = 640, 470
+    local p = {}
+    local function Hide() p.dimmer:Hide() end
+    p.dimmer, p.frame = EllesmereUI.BuildPopupShell("APLforEUIText", { w = W_, h = H_, clamp = true, onEscape = Hide })
+    local f = p.frame
+
+    p.title = EllesmereUI.MakeFont(f, 16, nil, 1, 1, 1, 1)
+    p.title:SetPoint("TOP", f, "TOP", 0, -18)
+    p.subtitle = EllesmereUI.MakeFont(f, 11, nil, 1, 1, 1, EllesmereUI.TEXT_DIM_A)
+    p.subtitle:SetPoint("TOP", p.title, "BOTTOM", 0, -6)
+
+    local box = CreateFrame("Frame", nil, f)
+    box:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -62)
+    box:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -20, 76)
+    EllesmereUI.SolidTex(box, "BACKGROUND", 0, 0, 0, 0.5):SetAllPoints()
+    EllesmereUI.MakeBorder(box, 1, 1, 1, 0.2)
+    local sf = CreateFrame("ScrollFrame", nil, box)
+    sf:SetPoint("TOPLEFT", 10, -8)
+    sf:SetPoint("BOTTOMRIGHT", -14, 8)
+    sf:SetClipsChildren(true)
+    local e = CreateFrame("EditBox", nil, sf)
+    e:SetMultiLine(true)
+    e:SetAutoFocus(false)
+    e:SetMaxLetters(0)
+    e:SetFont(EllesmereUI.EXPRESSWAY, 12, "")
+    e:SetTextColor(1, 1, 1, 0.9)
+    e:SetWidth(W_ - 40 - 30)
+    sf:SetScrollChild(e)
+    local update = EllesmereUI.AttachSmoothScrollbar(sf, {
+        step = 60, thumbMin = 20, rightInset = 0, topInset = 2, level = 5,
+        trackAlpha = 0.05, thumbAlpha = 0.22, child = e })
+    e:SetScript("OnSizeChanged", function() if update then update() end end)
+    e:SetScript("OnCursorChanged", function(_, _, y, _, ch)
+        y = -y
+        local top, vh = sf:GetVerticalScroll(), sf:GetHeight()
+        if y < top then sf:SetVerticalScroll(y) elseif y + ch > top + vh then sf:SetVerticalScroll(y + ch - vh) end
+        if update then update() end
+    end)
+    e:SetScript("OnEscapePressed", Hide)
+    e:SetScript("OnTextChanged", function(self, user)
+        if p.readOnly and user then Kit.SetEditText(self, p.text); self:HighlightText() end
+    end)
+    box:EnableMouse(true)
+    box:SetScript("OnMouseDown", function() e:SetFocus() end)
+    p.edit = e
+
+    p.status = EllesmereUI.MakeFont(f, 11, nil, 1, 0.4, 0.4, 0.95)
+    p.status:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 2, -8)
+    p.status:SetPoint("RIGHT", box, "RIGHT", 0, 0)
+    p.status:SetJustifyH("LEFT")
+
+    p.confirm = EllesmereUI.BuildPopupButton(f, 130, 28, "Import", function()
+        local ok, err = p.onConfirm(Kit.GetEditText(p.edit))
+        if ok then Hide() else p.status:SetText(err or "Import failed.") end
+    end)
+    p.confirm:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -6, 18)
+    p.close = EllesmereUI.BuildPopupButton(f, 130, 28, "Close", Hide)
+    return p
+end
+
+function Kit.TextPopup(o)
+    textPopup = textPopup or BuildTextPopup()
+    local p = textPopup
+    p.readOnly, p.text, p.onConfirm = o.readOnly, o.text or "", o.onConfirm
+    p.title:SetText(o.title or "")
+    p.subtitle:SetText(o.subtitle or "")
+    p.status:SetText("")
+    Kit.SetEditText(p.edit, p.text)
+    p.close:ClearAllPoints()
+    if o.onConfirm then
+        p.confirm:Show()
+        p.close:SetPoint("BOTTOMLEFT", p.frame, "BOTTOM", 6, 18)
+    else
+        p.confirm:Hide()
+        p.close:SetPoint("BOTTOM", p.frame, "BOTTOM", 0, 18)
+    end
+    p.dimmer:Show()
+    C_Timer.After(0.05, function()
+        p.edit:SetFocus()
+        if p.readOnly then p.edit:HighlightText() end
+    end)
+    return p
 end

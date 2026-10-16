@@ -348,3 +348,14 @@ function Store.AddBlock(def, kind)
     Store.Changed(def)
     return item
 end
+
+-- Saves an imported APL (Exchange.Import) as a new user APL. Never
+-- overwrites: the name is made unique within its spec.
+function Store.AddImported(def)
+    def.id = NewID()
+    def.builtin = nil
+    def.name = UniqueName(def.specID, def.name)
+    DB().apls[def.id] = def
+    Store.Changed(def)
+    return def
+end

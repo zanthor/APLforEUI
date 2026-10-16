@@ -292,7 +292,9 @@ function Engine.Compile(def)
     for _, c in ipairs(def.counters or {}) do rt.counters[c.name] = { value = c.initial or 0 } end
 
     for _, v in ipairs(def.variables or {}) do
-        local fn, e = Expr.Compile(v.expr, resolve)
+        local fn, e
+        if not v.expr or v.expr:match("^%s*$") then e = "has no expression yet"
+        else fn, e = Expr.Compile(v.expr, resolve) end
         if fn then rt.varFns[v.name] = fn else err("variable " .. v.name, e) end
     end
 

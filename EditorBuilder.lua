@@ -253,15 +253,15 @@ local function BuildGroup(parent, y, def, group, depth, ctx)
                     box:SetTextColor(1, 1, 1, 0.9)
                     EllesmereUI.SolidTex(box, "BACKGROUND", 0, 0, 0, 0.5):SetAllPoints()
                     EllesmereUI.MakeBorder(box, 1, 1, 1, 0.2)
-                    box:SetText(item.value or "")
+                    Kit.SetEditText(box, item.value)
                     box:SetEnabled(editable)
                     local function Commit(self)
-                        local v = (self:GetText() or ""):match("^%s*(.-)%s*$")
+                        local v = Kit.GetEditText(self):match("^%s*(.-)%s*$")
                         if v ~= "" and v ~= item.value then item.value = v; ctx.commit() end
                     end
                     box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
                     box:SetScript("OnEditFocusLost", Commit)
-                    box:SetScript("OnEscapePressed", function(self) self:SetText(item.value or ""); self:ClearFocus() end)
+                    box:SetScript("OnEscapePressed", function(self) Kit.SetEditText(self, item.value); self:ClearFocus() end)
                     anchor = box
                 end
             end

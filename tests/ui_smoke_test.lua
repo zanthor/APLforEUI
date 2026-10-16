@@ -50,6 +50,11 @@ function EllesmereUI.BuildToggleControl(parent, level, get, set)
     rec.toggles[#rec.toggles + 1] = { get = get, set = set }
     return tg, function() end, function() end
 end
+function EllesmereUI.BuildPopupShell(name, opts)
+    local dimmer = Stub()
+    return dimmer, Stub(dimmer)
+end
+function EllesmereUI.AttachSmoothScrollbar() return function() end end
 function EllesmereUI.BuildPopupButton(parent, w, h, label, onClick)
     local b = Stub(parent)
     rec.buttons[#rec.buttons + 1] = { label = label, onClick = onClick, frame = b }
@@ -267,6 +272,41 @@ for _, t in ipairs(rec.toggles) do t.get() end
 rec.toggles[#rec.toggles].set(true)
 Check(Store.ActiveID(269) == def.id, "running toggle activates the APL")
 Check(ns.GetActiveAPL() == Engine.GetRuntime(def), "active runtime is the edited APL")
+
+-- 7. Export and import through the popup.
+C_Timer.After = function(_, fn) fn() end
+local captured
+local realPopup = Kit.TextPopup
+Kit.TextPopup = function(o) captured = realPopup(o); return captured end
+Kit.SelectAPL(def.id)
+Build("APLs")
+Row("Export").onClick()
+Check(captured and ns.EditorKit.GetEditText(captured.edit) == ns.Exchange.Export(def), "export popup shows the export text")
+Check(captured.readOnly, "export popup is read-only")
+Check(captured.edit:GetText() == ns.Exchange.Export(def):gsub("|", "||"), "export box holds escaped pipes")
+local exported = ns.EditorKit.GetEditText(captured.edit)
+Row("Import").onClick()
+Check(captured.edit:GetText() == "" and not captured.readOnly, "import popup starts empty")
+captured.edit:SetText("not an apl")
+local ok, err = captured.onConfirm(ns.EditorKit.GetEditText(captured.edit))
+Check(not ok and err and err:find("line 1", 1, true), "bad import reports the line: " .. tostring(err))
+local before = #Store.ListForSpec(269)
+-- What WoW gives back after Ctrl+V: every "|" doubled.
+captured.edit:SetText(exported)
+local before2 = #Store.ListForSpec(269)
+local importBtn
+for i = #rec.buttons, 1, -1 do if rec.buttons[i].label == "Import" then importBtn = rec.buttons[i]; break end end
+importBtn.onClick()
+Check(#Store.ListForSpec(269) == before2 + 1, "Import button imports the pasted text")
+Check(#Engine.GetRuntime(Kit.Def()).errors == #Engine.GetRuntime(def).errors, "pasted import has no new problems: " .. tostring(Engine.GetRuntime(Kit.Def()).errors[1]))
+ok = captured.onConfirm(exported:gsub("|", "||"))
+Check(ok, "good import accepted")
+Check(#Store.ListForSpec(269) == before + 2, "import added a new APL")
+local imported = Kit.Def()
+Check(imported ~= def and imported.name ~= def.name and imported.id:find("^user:"), "editor switched to the imported copy: " .. imported.name)
+Check(ns.Exchange.Export(imported):gsub("apl=[^\n]*", "") == exported:gsub("apl=[^\n]*", ""), "imported copy matches the export")
+for _, page in ipairs(mod.pages) do Build(page) end
+Kit.TextPopup = realPopup
 
 print_real(string.format("%d page rebuild requests", rec.refreshes))
 print_real(fails == 0 and "ALL PASS" or (fails .. " failures"))

@@ -10,6 +10,8 @@ EllesmereUI Cooldown Manager (`OptionalDeps`), so it must also work without them
   `Expression.lua` (SimC-style parser/compiler), `Engine.lua` (data APL
   runtime: timers, counters, variables, lists; APL selection), `Store.lua`
   (user APLs in saved variables and every editor operation on them; no UI),
+  `Exchange.lua` (SimC-style text import/export; format documented at the
+  top of the file; no UI),
   `Defaults/*.lua` (built-in APLs as data; no per-spec Lua),
   `Tracking.lua` (cast events, stats, broker), `Editor*.lua` (APL editor:
   Kit = shared controls/state, APLs/Lists/Blocks tabs, Builder = condition
@@ -19,6 +21,7 @@ EllesmereUI Cooldown Manager (`OptionalDeps`), so it must also work without them
 - Tests (offline, plain Lua 5.1; `lua.exe` sits next to `luac.exe`; WoW API
   mocks shared in `tests/mock_wow.lua`): `tests/expr_test.lua .` (parser),
   `tests/editor_logic_test.lua .` (formatter, builder forms, store),
+  `tests/exchange_test.lua .` (import/export round trip and errors),
   `tests/ui_smoke_test.lua .` (every editor page against a recording mock
   EllesmereUI, driven like a user; catches errors, not layout) and
   `tests/parity_sim.lua .` (frozen `tests/legacy_Monk_Windwalker.lua` vs the

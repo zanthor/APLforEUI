@@ -69,6 +69,34 @@ function Editor.BuildHeader(hdr, hdrW)
 end
 
 -------------------------------------------------------------------------------
+--  Import: always a new user APL for the spec named in the text, which the
+--  editor then switches to.
+-------------------------------------------------------------------------------
+function Editor.OpenImport()
+    Kit.TextPopup({
+        title = "Import APL",
+        subtitle = "Paste APL for EUI export text below. It is added as a new APL; nothing is replaced.",
+        onConfirm = function(text)
+            local def, errors = ns.Exchange.Import(text)
+            if not def then
+                local shown = {}
+                for i = 1, math.min(#errors, 3) do shown[i] = errors[i] end
+                if #errors > 3 then shown[#shown + 1] = "...and " .. (#errors - 3) .. " more" end
+                return false, table.concat(shown, "\n")
+            end
+            Store.AddImported(def)
+            local problems = #ns.Engine.GetRuntime(def).errors
+            print("|cff60c0ffAPL for EUI|r: imported \"" .. def.name .. "\" for " .. Kit.SpecLabel(def.specID)
+                .. (problems > 0 and (" with " .. problems .. " problem(s); see the Lists tab.") or ".")
+                .. " Use its toggle on the APLs tab to make it run.")
+            Kit.state.specID = def.specID
+            Kit.SelectAPL(def.id)
+            return true
+        end,
+    })
+end
+
+-------------------------------------------------------------------------------
 --  APLs tab
 -------------------------------------------------------------------------------
 local function ReadOnly() return not Kit.Editable() end
@@ -90,7 +118,14 @@ function Editor.BuildAPLsPage(parent, yOffset)
     _, h = W:SectionHeader(parent, "APLS FOR " .. Kit.SpecLabel(specID):upper(), y); y = y - h
     local list = Store.ListForSpec(specID)
     if #list == 0 then
-        y = Kit.Note(parent, y, "No APLs for this spec yet. Use New Empty APL below.")
+        y = Kit.Note(parent, y, "No APLs for this spec yet. Create one or import one.")
+        _, h = W:DualRow(parent, y,
+            { type = "button", text = "New Empty APL", onClick = function()
+                local def = Store.New(specID)
+                Kit.SelectAPL(def.id)
+            end },
+            { type = "button", text = "Import", onClick = Editor.OpenImport })
+        y = y - h
     end
     for _, def in ipairs(list) do
         y = Kit.Header(parent, y, {
@@ -140,6 +175,17 @@ function Editor.BuildAPLsPage(parent, yOffset)
                 local def = Store.New(specID)
                 Kit.SelectAPL(def.id)
             end })
+        y = y - h
+
+        _, h = W:DualRow(parent, y,
+            { type = "button", text = "Export", onClick = function()
+                Kit.TextPopup({
+                    title = "Export APL", readOnly = true,
+                    subtitle = "Press Ctrl+C to copy, then share or keep the text.",
+                    text = ns.Exchange.Export(selected),
+                })
+            end },
+            { type = "button", text = "Import", onClick = Editor.OpenImport })
         y = y - h
 
         _, h = W:SectionHeader(parent, "OPTIONS", y); y = y - h

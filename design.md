@@ -141,7 +141,8 @@ APLforEUIDB.apls[id] = <user APL>;  APLforEUIDB.activeAPL[specID] = id
    Still to do: the library of ready-made timers, counters and variables
    that the editor copies into an APL (decided earlier; nothing to put in
    it beyond Windwalker yet).
-4. **Import/Export.**
+4. **Import/Export.** DONE. SimC-style text (format in `Exchange.lua`);
+   import always adds a new APL, never replaces one.
 5. **Openers.** Combat-start lists that run for X actions or X seconds.
 
 ## Editor (phase 3)
@@ -158,10 +159,6 @@ APLforEUIDB.apls[id] = <user APL>;  APLforEUIDB.activeAPL[specID] = id
 
 ## Open items
 
-1. Import/export format: EUI-style profile string, or SimC-style text.
-   Recommendation: SimC-style text. The condition text expression already
-   needs a SimC-style parser and serializer, so export becomes "print every
-   list in that syntax" and import reuses the same parser. It is also
-   readable and diffable.
+1. DONE: import/export uses SimC-style text.
 2. Spell/talent IDs for other Monk specs (Brewmaster, Mistweaver) once
    Windwalker is done. Do not guess these; ask.
