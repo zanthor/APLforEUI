@@ -9,10 +9,12 @@ class/spec, edited in game inside the EllesmereUI plugin section.
 |---|---|
 | Sidebar | Plugin section "APL for EUI" with two modules, in order: **APL** (editor), **Widgets** (the former "Settings" module). |
 | APLs | Many APLs per account; one active APL per spec (`activeAPL[specID]`). |
-| Lists | An APL holds N priority lists, each covering a target-count range (`1`, `2-4`, `5+`). Ranges may not overlap; the editor rejects overlaps. |
-| No match | If no list covers the current target count, or no entry in the list matches, show nothing. |
+| Lists | An APL holds N priority lists, each covering a target-count range (`1`, `2-4`, `5+`). Ranges may not overlap within a group; the editor rejects overlaps. Phase 5 puts lists into prioritized **groups** (see below). |
+| No match | If no list covers the current target count, or no entry in the list matches, show nothing. Phase 5: an active group with nothing to suggest falls through to the next group (open item 3); only after the last group does it show nothing. |
 | Conditions | Both a point-and-click builder and a SimC-style text expression (`chi>=3&!buff.zenith.up`). Both edit the same stored condition. |
-| Openers | Separate lists that start on entering combat and run for X actions or X seconds. **Later phase.** |
+| Openers | N opener list sets (ST/AOE like any other). Phase 5 models them as groups whose condition is "early in combat". |
+| Burst / conditional lists | List sets that take priority while a condition holds (e.g. Courage of the White Tiger or HotJS up). Phase 5, same mechanism as openers. |
+| Holding cooldowns | An entry can be marked holdable: ignoring it for X casts sets a "holding" state that conditions can read; casting it (or leaving combat) clears it. Phase 6. |
 | Combo Strikes | Generic APL option "never suggest the last cast"; only the Windwalker APL turns it on. |
 | Spec support | A spec is "supported" when we ship a default APL for it. Monk first; other classes after Monk is done. No Lua per spec: everything is configuration (below). The Lua spec registry was removed once Windwalker reached parity; re-add a hook only if something truly cannot be modelled. |
 | Shipped defaults | Default APLs, plus a library of ready-made timers, counters and variables (as we sort them out) that the editor copies into an APL. Copies, not references, so an APL stays self-contained. |
@@ -143,7 +145,58 @@ APLforEUIDB.apls[id] = <user APL>;  APLforEUIDB.activeAPL[specID] = id
    it beyond Windwalker yet).
 4. **Import/Export.** DONE. SimC-style text (format in `Exchange.lua`);
    import always adds a new APL, never replaces one.
-5. **Openers.** Combat-start lists that run for X actions or X seconds.
+5. **List groups: openers and conditional lists.** See "Phase 5" below.
+6. **Holding cooldowns.** See "Phase 6" below.
+
+## Phase 5: list groups (openers, burst windows)
+
+Openers and burst windows are the same idea: a set of ST/AOE lists that
+takes priority while a condition holds. So lists move into **groups**:
+
+```lua
+groups = {
+    { name = "Opener", when = "combat.casts<5&combat.time<8", lists = { ST, AOE } },
+    { name = "Burst",  when = "buff.courage_of_the_white_tiger.up|buff.hotjs.up", lists = { ST } },
+    { name = "Default", lists = { ST, AOE } },   -- no condition: always
+}
+```
+
+- **Selection:** walk groups top to bottom. A group applies when its
+  condition is true and one of its lists covers the target count; that
+  list is evaluated. If it suggests nothing, fall through to the next group.
+  After the last group: nothing.
+- **Ranges** may not overlap *within* a group; different groups can each
+  have their own ST and AOE lists.
+- **New reads:** `combat.time` (seconds since entering combat) and
+  `combat.casts` (casts reported since entering combat), both unknown out of
+  combat. An opener is just a group using them; the editor offers an
+  "Opener" preset that fills in "first N casts or N seconds".
+- **Labels:** list prefixes stay per list (`OST3`, `BST1`, `ST9`), so every
+  label still names exactly one entry.
+- **Migration:** an APL's existing `lists` become one group "Default" with
+  no condition. Saved user APLs are converted on load; export moves to
+  `format=2` (`group.<key>=<name>`, `group.<key>.if=...`, lists name their
+  group); format 1 text still imports as a single Default group.
+- **Editor:** the Lists tab shows groups (name, condition, order) with their
+  lists nested inside.
+
+## Phase 6: holding cooldowns
+
+The APL can't know you are saving a cooldown for a burst window. Instead it
+notices you skipping one:
+
+- An entry can be marked **holdable** with a threshold N ("held after
+  ignoring it N times").
+- **Ignored** = the entry was the suggestion when you cast something else.
+  At N, that spell becomes **held**.
+- While held, the entry is skipped (the APL suggests what comes next), and
+  conditions can read `holding` (anything held) or `holding.<name>` (that
+  spell). A "Holding" group (phase 5) can use it too.
+- **Cleared** when the held spell is cast, or when combat ends.
+- **Counting** is consecutive: casting the spell, or a cast while it wasn't
+  the suggestion, resets it.
+- **Compliance:** the N ignored casts are re-scored as compliant once the
+  spell becomes held.
 
 ## Editor (phase 3)
 
@@ -162,3 +215,10 @@ APLforEUIDB.apls[id] = <user APL>;  APLforEUIDB.activeAPL[specID] = id
 1. DONE: import/export uses SimC-style text.
 2. Spell/talent IDs for other Monk specs (Brewmaster, Mistweaver) once
    Windwalker is done. Do not guess these; ask.
+3. DONE (decided): Phase 5 falls through to the next group when the active
+   group's list suggests nothing.
+4. DONE (decided): Phase 6 counts **consecutive** ignores; casting the spell,
+   or a cast while it wasn't the suggestion, resets the count.
+5. DONE (decided): the N ignored casts are **forgiven** in the compliance
+   stats once the spell becomes held.
+6. DONE (decided): a held entry is **skipped** until the hold clears.
