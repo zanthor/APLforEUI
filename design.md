@@ -136,11 +136,11 @@ APLforEUIDB.apls[id] = <user APL>;  APLforEUIDB.activeAPL[specID] = id
    Parity confirmed offline and in game; the Lua version now lives only in
    `tests/` as the parity reference. Status widget shows the running
    list's name.
-3. **Editor UI.** APL list (create/duplicate/rename/delete/set active), list
-   editor with target ranges, entry editor with condition builder and text
-   expression, names/timers/counters/variables editors, shipped library.
-   EUI's widget factory has no text input or reorderable list, so those are
-   custom frames styled to match.
+3. **Editor UI.** DONE, except the shipped library: APLs / Lists /
+   Building Blocks tabs, condition builder and text editor, Problems list.
+   Still to do: the library of ready-made timers, counters and variables
+   that the editor copies into an APL (decided earlier; nothing to put in
+   it beyond Windwalker yet).
 4. **Import/Export.**
 5. **Openers.** Combat-start lists that run for X actions or X seconds.
 
