@@ -91,14 +91,16 @@ local function BuildListBody(parent, y, def, list, editable)
           end })
     y = y - h
 
+    -- Entries (and Add Entry) are the list's children: indented under it.
+    local sub = Kit.Child(parent)
     local count = #list.entries
     if count == 0 then
-        y = Kit.Note(parent, y, "No entries yet. Add one below; entries are checked top to bottom and the first match is suggested.")
+        y = Kit.Note(sub, y, "No entries yet. Add one below; entries are checked top to bottom and the first match is suggested.")
     end
     for j, entry in ipairs(list.entries) do
         local open = Kit.IsOpen(entry)
-        y = Kit.Header(parent, y, {
-            depth = 2,
+        local top = y
+        y = Kit.Header(sub, y, {
             title = "|cff909090" .. tostring(list.prefix) .. j .. "|r   " .. SpellLabel(def, entry.spell)
                 .. (entry.hold and ("  |cffd0a040[hold " .. entry.hold .. "]|r") or "")
                 .. "   |cff707070" .. Preview(entry.when) .. "|r",
@@ -118,7 +120,7 @@ local function BuildListBody(parent, y, def, list, editable)
             deleteTip = "Remove entry",
         })
         if open then
-            _, h = W:DualRow(parent, y,
+            _, h = W:DualRow(sub, y,
                 { type = "input", text = "Spell", inputWidth = 200, inputStyle = "popup",
                   placeholder = "Spell name or ID",
                   disabled = ro, disabledTooltip = Kit.READ_ONLY_TIP,
@@ -133,7 +135,7 @@ local function BuildListBody(parent, y, def, list, editable)
                   getValue = function() return entry.usable ~= false end,
                   setValue = function(v) if v then entry.usable = nil else entry.usable = false end; Store.Changed(def) end })
             y = y - h
-            _, h = W:DualRow(parent, y,
+            _, h = W:DualRow(sub, y,
                 { type = "input", text = "Hold After Ignored Casts", inputWidth = 60, inputStyle = "popup",
                   placeholder = "Never",
                   tooltip = "If you cast something else this many times in a row while this entry is the suggestion, its spell counts as held: the entry is skipped and holding / holding.<name> read true, until you cast it or combat ends. Leave empty to never hold.",
@@ -155,15 +157,16 @@ local function BuildListBody(parent, y, def, list, editable)
                   end },
                 { type = "spacer" })
             y = y - h
-            y = Kit.Condition(parent, y, def, {
+            y = Kit.Condition(sub, y, def, {
                 owner = entry, editable = editable, label = "Condition",
                 get = function() return entry.when end,
                 set = function(t) entry.when = t; Store.Changed(def) end,
             })
+            Kit.OpenSpan(sub, top, y, 0)
         end
     end
 
-    _, h = W:DualRow(parent, y,
+    _, h = W:DualRow(sub, y,
         { type = "input", text = "Add Entry", inputWidth = 200, inputStyle = "popup",
           placeholder = "Spell name or ID",
           disabled = ro, disabledTooltip = Kit.READ_ONLY_TIP,
@@ -229,11 +232,13 @@ local function BuildGroupBody(parent, y, def, group, editable)
         set = function(t) group.when = t; Store.Changed(def) end,
     })
 
+    -- Lists (and Add List) are the group's children: indented under it.
+    local sub = Kit.Child(parent)
     local count = #group.lists
     for i, list in ipairs(group.lists) do
         local open = Kit.IsOpen(list)
-        y = Kit.Header(parent, y, {
-            depth = 1,
+        local top = y
+        y = Kit.Header(sub, y, {
             title = list.name .. "   |cff909090" .. tostring(list.prefix) .. "  |  " .. RangeText(list)
                 .. "  |  " .. #list.entries .. (#list.entries == 1 and " entry" or " entries") .. "|r",
             open = open, editable = editable, index = i, count = count,
@@ -248,10 +253,13 @@ local function BuildGroupBody(parent, y, def, group, editable)
             end,
             deleteTip = "Delete list",
         })
-        if open then y = BuildListBody(parent, y, def, list, editable) end
+        if open then
+            y = BuildListBody(sub, y, def, list, editable)
+            Kit.OpenSpan(sub, top, y, 0)
+        end
     end
 
-    _, h = W:DualRow(parent, y,
+    _, h = W:DualRow(sub, y,
         { type = "button", text = "Add List",
           disabled = ro, disabledTooltip = Kit.READ_ONLY_TIP,
           onClick = function()
@@ -291,6 +299,7 @@ function Editor.BuildListsPage(parent, yOffset)
     local groups = def.groups or {}
     for i, group in ipairs(groups) do
         local open = Kit.IsOpen(group)
+        local top = y
         y = Kit.Header(parent, y, {
             title = GroupTitle(group),
             open = open, editable = editable, index = i, count = #groups,
@@ -305,7 +314,10 @@ function Editor.BuildListsPage(parent, yOffset)
             end or nil,
             deleteTip = "Delete group",
         })
-        if open then y = BuildGroupBody(parent, y, def, group, editable) end
+        if open then
+            y = BuildGroupBody(parent, y, def, group, editable)
+            Kit.OpenSpan(parent, top, y, 0)
+        end
     end
 
     _, h = W:DualRow(parent, y,

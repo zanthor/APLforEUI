@@ -58,6 +58,9 @@ return function(dir)
     IsPlayerSpell = function(id) return true end
     UnitCanAttack = function() return true end
     UnitIsDead = function() return false end
+    -- S.idle[unit] = true: an enemy that isn't in combat.
+    S.idle = {}
+    UnitAffectingCombat = function(unit) return not S.idle[unit] end
     Enum = { PowerType = { Mana = 0, Energy = 3, Chi = 12, ComboPoints = 4 } }
     UnitPower = function(_, pt) if pt == 12 then return S.chi end return 0 end
     local BASE_CD = { [1249625] = 90000, [123904] = 120000 }
@@ -109,9 +112,12 @@ return function(dir)
     end }
 
     -- Cooldown Viewer mock: one item per currently active buff
+    -- S.linked[id] = { buff IDs linked to the CDM entry id }.
+    S.linked = {}
     local function Item(id)
         return {
             GetBaseSpellID = function() return id end,
+            GetCooldownInfo = function() return { spellID = id, linkedSpellIDs = S.linked[id] or {} } end,
             IsShown = function() return S.buffs[id] == true end,
             GetAuraSpellInstanceID = function() if S.buffs[id] then return 1 end return nil end,
         }

@@ -22,7 +22,8 @@ ns.slashCommands.melee = function()
                 local dead = UnitIsDead(unit)
                 local inRange = C_Spell and C_Spell.IsSpellInRange and C_Spell.IsSpellInRange(rangeSpellID, unit)
                 print("APL debug: " .. unit .. " canAttack=" .. tostring(canAttack)
-                    .. " dead=" .. tostring(dead) .. " inRange=" .. tostring(inRange))
+                    .. " dead=" .. tostring(dead) .. " inCombat=" .. tostring(UnitAffectingCombat(unit))
+                    .. " inRange=" .. tostring(inRange))
             else
                 -- Neither known field name resolved -- dump every key on this
                 -- plate so we can find the real one instead of guessing again.

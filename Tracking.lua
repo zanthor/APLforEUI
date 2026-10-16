@@ -119,6 +119,7 @@ local function BuildStatsPrefix()
 end
 
 local function ReportCast(spellID, expected)
+    if ns.AUTO_ATTACKS[spellID] then return end
     -- Echo guard: some spells (Fists of Fury, Spinning Crane Kick) fire their
     -- start/succeeded events twice per real cast, each on its own castGUID,
     -- from every reporting path below (CHANNEL_START, direct castGUID match,

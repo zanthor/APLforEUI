@@ -23,6 +23,11 @@ ns.lastCastSpellID = nil
 ns.currentChannelSpellID = nil
 function ns.IsChanneling(spellID) return ns.currentChannelSpellID == spellID end
 
+-- Auto-attacks fire a "cast" event every swing/shot (Auto Shot every few
+-- seconds for Hunters). They are not player decisions: never tracked as
+-- casts, counted in stats/combat.casts, or used as a buff's cause.
+ns.AUTO_ATTACKS = { [75] = true, [6603] = true }  -- Auto Shot, Auto Attack
+
 -- /apl <cmd> handlers, registered by whichever file owns the state they read.
 ns.slashCommands = {}
 
@@ -88,7 +93,10 @@ end
 -- No direct "enemies in range" API exists, so this infers it the same way
 -- EUI's own EllesmereUI_Range.lua does for single-target range: per-nameplate
 -- IsSpellInRange against a range spell (default: the active APL's),
--- counted up. Plain booleans the whole way, never secret.
+-- counted up. Only enemies in combat count (UnitAffectingCombat, not
+-- secret), so idle mobs and unattacked dummies in range don't turn single
+-- target into AOE -- which matters most for ranged range spells. Plain
+-- booleans the whole way, never secret.
 function ns.GetTargetCount(rangeSpellID)
     local count = 0
     if not rangeSpellID then
@@ -100,7 +108,7 @@ function ns.GetTargetCount(rangeSpellID)
     if not plates then return count end
     for _, plate in ipairs(plates) do
         local unit = plate.namePlateUnitToken or plate.unitToken
-        if unit and UnitCanAttack("player", unit) and not UnitIsDead(unit) then
+        if unit and UnitCanAttack("player", unit) and not UnitIsDead(unit) and UnitAffectingCombat(unit) then
             local inRange = C_Spell and C_Spell.IsSpellInRange and C_Spell.IsSpellInRange(rangeSpellID, unit)
             if inRange then count = count + 1 end
         end
@@ -118,24 +126,49 @@ end
 -- itself. This is the exact mechanism EUI's own Cooldown Manager relies on
 -- for buff-bar glows, used here for any buff whose aura data goes dark to
 -- regular addon code in real combat.
+-- A buff can be on an icon under its own ID or as one of the icon's linked
+-- spells (Beast Cleave's buff 268877 shows on the 115939 entry). Linked
+-- IDs come from the item's static cooldown info (CooldownViewerItemData.lua
+-- GetCooldownInfo); with several linked buffs the icon only says "one of
+-- them is up".
+local function ItemShowsSpell(item, spellID)
+    if item.GetBaseSpellID and item:GetBaseSpellID() == spellID then return true end
+    local info = item.GetCooldownInfo and item:GetCooldownInfo()
+    if not info then return false end
+    if info.overrideSpellID == spellID then return true end
+    for _, linked in ipairs(info.linkedSpellIDs or {}) do
+        if linked == spellID then return true end
+    end
+    return false
+end
+
 function ns.FindCooldownViewerItemForSpell(spellID)
     for _, viewerName in ipairs({ "BuffIconCooldownViewer", "BuffBarCooldownViewer" }) do
         local viewer = _G[viewerName]
         if viewer and viewer.GetItemFrames then
             for _, item in ipairs(viewer:GetItemFrames()) do
-                if item.GetBaseSpellID and item:GetBaseSpellID() == spellID then
-                    return item
-                end
+                if ItemShowsSpell(item, spellID) then return item end
             end
         end
     end
     return nil
 end
 
+-- True if any icon showing spellID (own or linked) has its aura up; a buff
+-- can match more than one icon.
 function ns.IsCooldownViewerAuraActive(spellID)
-    local item = ns.FindCooldownViewerItemForSpell(spellID)
-    return item ~= nil and item:IsShown() and item.GetAuraSpellInstanceID
-        and item:GetAuraSpellInstanceID() ~= nil
+    for _, viewerName in ipairs({ "BuffIconCooldownViewer", "BuffBarCooldownViewer" }) do
+        local viewer = _G[viewerName]
+        if viewer and viewer.GetItemFrames then
+            for _, item in ipairs(viewer:GetItemFrames()) do
+                if ItemShowsSpell(item, spellID) and item:IsShown() and item.GetAuraSpellInstanceID
+                    and item:GetAuraSpellInstanceID() ~= nil then
+                    return true
+                end
+            end
+        end
+    end
+    return false
 end
 
 -- Tries the Cooldown Viewer signal first (reliable in real combat, but only

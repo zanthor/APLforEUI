@@ -65,6 +65,13 @@ local total, pct = Stats()
 Check(total == 1 and pct == 0, "first ignore counts as a miss for now: " .. total .. "/" .. pct)
 Check(Mark() == "", "one ignore: no marker")
 
+-- Auto Shot fires cast events constantly: never a cast, an ignore or combat.casts.
+local castsBefore = ns.combatCasts
+Cast(75)
+Cast(75)
+total = Stats()
+Check(total == 1 and ns.combatCasts == castsBefore and Holding("holding") == 0, "Auto Shot ignored by tracking")
+
 -- 2. Second ignore in a row: held, entry skipped, both casts forgiven.
 Cast(TP)
 Check(Holding("holding") == 1 and Holding("holding.xuen") == 1 and Holding("holding.fof") == 0, "two ignores: xuen held")

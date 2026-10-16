@@ -216,5 +216,6 @@ function Editor.BuildAPLsPage(parent, yOffset)
               end })
         y = y - h
     end
+    y = Editor.BuildHarvestSection(parent, y)
     return math.abs(y)
 end

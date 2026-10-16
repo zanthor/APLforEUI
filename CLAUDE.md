@@ -17,11 +17,13 @@ EllesmereUI Cooldown Manager (`OptionalDeps`), so it must also work without them
   runtime: timers, counters, variables, lists; APL selection), `Store.lua`
   (user APLs in saved variables and every editor operation on them; no UI),
   `Exchange.lua` (SimC-style text import/export; format documented at the
-  top of the file; no UI),
+  top of the file; no UI), `Harvest.lua` (data harvesting catalog: CDM,
+  spellbook, talents, casts, out-of-combat buffs; no UI),
   `Defaults/*.lua` (built-in APLs as data; no per-spec Lua),
   `Tracking.lua` (cast events, stats, broker), `Editor*.lua` (APL editor:
   Kit = shared controls/state, APLs/Lists/Blocks tabs, Builder = condition
-  editor; built from EUI's Macro Factory patterns, public EUI functions only),
+  editor, Harvest = harvesting switch and Discovered section; built from
+  EUI's Macro Factory patterns, public EUI functions only),
   `Widgets.lua`, `Glow.lua`, `Options.lua` (EUI plugin pages), `Slash.lua`.
   Files share state through `ns`, never globals.
 - Tests (offline, plain Lua 5.1; `lua.exe` sits next to `luac.exe`; WoW API
@@ -31,6 +33,8 @@ EllesmereUI Cooldown Manager (`OptionalDeps`), so it must also work without them
   `tests/groups_test.lua .` (list groups: priority, fall-through, openers),
   `tests/holds_test.lua .` (holding cooldowns through Tracking's events),
   `tests/glow_test.lua .` (CDM glow and its settings page),
+  `tests/harvest_test.lua .` (data harvesting and the Discovered section),
+  `tests/bm_test.lua .` (built-in Beast Mastery APL against the guide),
   `tests/ui_smoke_test.lua .` (every editor page against a recording mock
   EllesmereUI, driven like a user; catches errors, not layout) and
   `tests/parity_sim.lua .` (frozen `tests/legacy_Monk_Windwalker.lua` vs the

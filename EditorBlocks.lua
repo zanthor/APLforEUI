@@ -49,15 +49,18 @@ local function BuildTriggers(parent, y, def, item, kind, editable)
     local ro = function() return not editable end
     local actions = kind == "timer" and TIMER_ACTIONS or COUNTER_ACTIONS
     local actionOrder = kind == "timer" and TIMER_ACTION_ORDER or COUNTER_ACTION_ORDER
+    -- Triggers (and Add Trigger) are the block's children: indented under it.
+    local sub = Kit.Child(parent)
     local count = #item.triggers
 
     if count == 0 then
-        y = Kit.Note(parent, y, "No triggers: this " .. kind .. " never changes. For each event, the first matching trigger runs.")
+        y = Kit.Note(sub, y, "No triggers: this " .. kind .. " never changes. For each event, the first matching trigger runs.")
     end
     for k, trig in ipairs(item.triggers) do
         local open = Kit.IsOpen(trig)
-        y = Kit.Header(parent, y, {
-            depth = 2, title = TriggerSummary(def, trig, actions),
+        local top = y
+        y = Kit.Header(sub, y, {
+            title = TriggerSummary(def, trig, actions),
             open = open, editable = editable, index = k, count = count,
             onClick = function() Kit.Toggle(trig) end,
             onMove = function(d) Store.Move(def, item.triggers, k, d); Kit.Rebuild() end,
@@ -65,7 +68,7 @@ local function BuildTriggers(parent, y, def, item, kind, editable)
             deleteTip = "Remove trigger",
         })
         if open then
-            _, h = W:DualRow(parent, y,
+            _, h = W:DualRow(sub, y,
                 { type = "dropdown", text = "When", values = EVENT_VALUES, order = EVENT_ORDER,
                   disabled = ro, disabledTooltip = Kit.READ_ONLY_TIP,
                   getValue = function() return trig.on end,
@@ -82,7 +85,7 @@ local function BuildTriggers(parent, y, def, item, kind, editable)
                       Kit.Rebuild()
                   end })
             y = y - h
-            _, h = W:DualRow(parent, y,
+            _, h = W:DualRow(sub, y,
                 { type = "dropdown", text = "Action", values = actions, order = actionOrder,
                   disabled = ro, disabledTooltip = Kit.READ_ONLY_TIP,
                   getValue = function() return trig.action end,
@@ -106,14 +109,15 @@ local function BuildTriggers(parent, y, def, item, kind, editable)
                       Kit.Rebuild()
                   end })
             y = y - h
-            y = Kit.Condition(parent, y, def, {
+            y = Kit.Condition(sub, y, def, {
                 owner = trig, editable = editable, label = "Only If",
                 get = function() return trig.when end,
                 set = function(t) trig.when = t ~= "" and t or nil; Store.Changed(def) end,
             })
+            Kit.OpenSpan(sub, top, y, 0)
         end
     end
-    local _, hh = W:DualRow(parent, y,
+    local _, hh = W:DualRow(sub, y,
         { type = "button", text = "Add Trigger", disabled = ro, disabledTooltip = Kit.READ_ONLY_TIP,
           onClick = function()
               local trig = { on = "cast", action = kind == "timer" and "set" or "add", value = "1" }
@@ -144,6 +148,7 @@ local function BuildBlockSection(parent, y, def, kind, editable)
 
     for i, item in ipairs(array) do
         local open = Kit.IsOpen(item)
+        local top = y
         local title = kind .. "." .. item.name
         if kind == "variable" then
             title = title .. "   |cff707070" .. ((item.expr or "") ~= "" and item.expr or "(empty)") .. "|r"
@@ -197,6 +202,7 @@ local function BuildBlockSection(parent, y, def, kind, editable)
             else
                 y = BuildTriggers(parent, y, def, item, kind, editable)
             end
+            Kit.OpenSpan(parent, top, y, 0)
         end
     end
     _, h = W:DualRow(parent, y,
@@ -268,6 +274,7 @@ function Editor.BuildBlocksPage(parent, yOffset)
         y = Kit.Note(parent, y, "\"" .. def.name .. "\" is built in and read-only. Duplicate it on the APLs or Lists tab to edit.")
     end
     y = Kit.Problems(parent, y, def)
+    y = Editor.BuildDiscovered(parent, y, def, editable)
     y = BuildBlockSection(parent, y, def, "variable", editable)
     y = BuildBlockSection(parent, y, def, "timer", editable)
     y = BuildBlockSection(parent, y, def, "counter", editable)

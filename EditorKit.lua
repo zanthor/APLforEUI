@@ -225,6 +225,40 @@ function Kit.Header(parent, y, o)
     return y - h, row
 end
 
+-- Nesting: children of an open item (a group's lists, a list's entries, a
+-- timer's triggers) are built into a frame shifted right by INDENT with the
+-- same vertical coordinates, so their rows, fields and accent bars all sit
+-- inside their owner. One per parent frame (weak, rebuilt with the page).
+Kit.INDENT = 24
+local children = setmetatable({}, { __mode = "k" })
+function Kit.Child(parent)
+    local c = children[parent]
+    if not c then
+        c = CreateFrame("Frame", nil, parent)
+        c:SetPoint("TOPLEFT", parent, "TOPLEFT", Kit.INDENT, 0)
+        c:SetSize(math.max(1, parent:GetWidth() - Kit.INDENT), 1)
+        children[parent] = c
+    end
+    return c
+end
+
+-- Accent bar from an open header's top (topY) down to the end of its body
+-- (bottomY), at the header's own indent, so it's clear which group / list /
+-- entry the fields below belong to. Its own frame above the rows (a texture
+-- on the page itself would sit under the row backgrounds).
+function Kit.OpenSpan(parent, topY, bottomY, depth)
+    local f = CreateFrame("Frame", nil, parent)
+    f:SetFrameLevel(parent:GetFrameLevel() + 40)
+    f:EnableMouse(false)
+    f:SetPoint("TOPLEFT", parent, "TOPLEFT", EllesmereUI.CONTENT_PAD + (depth or 0) * 24, topY)
+    f:SetSize(2, math.max(1, topY - bottomY))
+    local ac = EllesmereUI.ELLESMERE_GREEN
+    local t = f:CreateTexture(nil, "OVERLAY")
+    t:SetAllPoints()
+    t:SetColorTexture(ac.r, ac.g, ac.b, 1)
+    return f
+end
+
 -------------------------------------------------------------------------------
 --  Suggestion dropdown under a text field (mirrors AttachSuggest in the
 --  Macro Factory page). items(token) returns { { text, label }, ... };

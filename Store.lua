@@ -170,13 +170,16 @@ end
 
 -- Short name for spellID in def, creating one from the spell's name if the
 -- APL doesn't have it yet.
-function Store.EnsureName(def, spellID, spellName)
+-- isAura: a buff that shares its spell's name (Bestial Wrath the ability
+-- and its buff) becomes "<name>_buff" rather than "<name>_2".
+function Store.EnsureName(def, spellID, spellName, isAura)
     def.names = def.names or {}
     for name, id in pairs(def.names) do
         if id == spellID then return name end
     end
     local base = Store.MakeShortName(spellName or ("spell " .. spellID))
     if RESERVED[base] then base = base .. "_spell" end
+    if isAura and def.names[base] then base = base .. "_buff" end
     local name, n = base, 2
     while def.names[name] do name = base .. "_" .. n; n = n + 1 end
     def.names[name] = spellID
@@ -415,4 +418,44 @@ function Store.AddImported(def)
     DB().apls[def.id] = def
     Store.Changed(def)
     return def
+end
+
+-------------------------------------------------------------------------------
+--  Adding from the harvest catalog (Harvest.lua)
+-------------------------------------------------------------------------------
+
+-- Short name already given to spellID in def, if any.
+function Store.NameOf(def, spellID)
+    for name, id in pairs(def.names or {}) do
+        if id == spellID then return name end
+    end
+    return nil
+end
+
+-- A timer for a buff: on each cast of causeID, set it to duration. Named
+-- after the buff; returns the timer, or nil if one already starts on that
+-- cast with that duration.
+function Store.AddTimerForAura(def, auraID, auraName, causeID, causeName, duration)
+    -- The ability first, so a buff sharing its name becomes "<name>_buff".
+    local causeShort = Store.EnsureName(def, causeID, causeName)
+    local auraShort = Store.EnsureName(def, auraID, auraName, true)
+    local value = string.format("%g", duration)
+    def.timers = def.timers or {}
+    for _, t in ipairs(def.timers) do
+        for _, trig in ipairs(t.triggers or {}) do
+            if trig.on == "cast" and trig.spell == causeShort and trig.value == value and t.name == auraShort then
+                return nil
+            end
+        end
+    end
+    local taken = {}
+    for _, t in ipairs(def.timers) do taken[t.name] = true end
+    local name, n = auraShort, 2
+    while taken[name] do name = auraShort .. "_" .. n; n = n + 1 end
+    local timer = { name = name, triggers = {
+        { on = "cast", spell = causeShort, action = "set", value = value },
+    } }
+    def.timers[#def.timers + 1] = timer
+    Store.Changed(def)
+    return timer
 end

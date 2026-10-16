@@ -11,7 +11,9 @@ Expression.lua
 Engine.lua
 Store.lua
 Exchange.lua
+Harvest.lua
 Defaults\Monk_Windwalker.lua
+Defaults\Hunter_BeastMastery.lua
 Tracking.lua
 Widgets.lua
 Glow.lua
@@ -20,5 +22,6 @@ EditorAPLs.lua
 EditorBuilder.lua
 EditorLists.lua
 EditorBlocks.lua
+EditorHarvest.lua
 Options.lua
 Slash.lua

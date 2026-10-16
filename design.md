@@ -16,12 +16,13 @@ class/spec, edited in game inside the EllesmereUI plugin section.
 | Burst / conditional lists | List sets that take priority while a condition holds (e.g. Courage of the White Tiger or HotJS up). Phase 5, same mechanism as openers. |
 | Holding cooldowns | An entry can be marked holdable: ignoring it for X casts sets a "holding" state that conditions can read; casting it (or leaving combat) clears it. Phase 6. |
 | Combo Strikes | Generic APL option "never suggest the last cast"; only the Windwalker APL turns it on. |
-| Spec support | A spec is "supported" when we ship a default APL for it. Monk first; other classes after Monk is done. No Lua per spec: everything is configuration (below). The Lua spec registry was removed once Windwalker reached parity; re-add a hook only if something truly cannot be modelled. |
+| Spec support | A spec is "supported" when we ship a default APL for it. Windwalker Monk; Beast Mastery Hunter (Pack Leader) from a harvest + Method's guide, Dark Ranger pending a harvest with that hero tree. No Lua per spec: everything is configuration (below). The Lua spec registry was removed once Windwalker reached parity; re-add a hook only if something truly cannot be modelled. |
 | Shipped defaults | Default APLs, plus a library of ready-made timers, counters and variables (as we sort them out) that the editor copies into an APL. Copies, not references, so an APL stays self-contained. |
 | Import/Export | Wanted. Format still open (see Open items). |
 | Saved data | Per account (`APLforEUIDB`). |
 | Compliance | Unchanged: "did you press what we suggested", one rolling 60s window across all lists (opener, ST, AOE). |
 | Predictive (+1) | Benched. `predictive.md` stays for later. |
+| Data harvesting | A switch on the APLs tab collects the current spec's Cooldown Manager entries (C_CooldownViewer), class/spec spellbook, active talents (incl. hero tree), casts and, out of combat only, own buffs (duration, stacks, cause = the cast at expiration - duration) into a per-spec catalog (`APLforEUIDB.harvest`). Building Blocks > Discovered adds from it (names, or buff timers); Export Harvest gives text for building defaults. Mechanics measurement (cooldown reductions, stack sources) is a possible later stage. |
 | EUI dependency | Stock EllesmereUI only. The CDM glow finds the suggested spell's icon among Blizzard's Essential/Utility viewer item frames (EUI's CDM restyles those; IDs verified readable in restricted combat) and draws with `EllesmereUI.Glows`, restriction-safe styles only. Settings: Widgets > CDM Glow. Icons EUI adds itself (outside Blizzard's tracked set) can't glow. |
 
 ## Conditions: building blocks
