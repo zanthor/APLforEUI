@@ -10,7 +10,7 @@ class/spec, edited in game inside the EllesmereUI plugin section.
 | Sidebar | Plugin section "APL for EUI" with two modules, in order: **APL** (editor), **Widgets** (the former "Settings" module). |
 | APLs | Many APLs per account; one active APL per spec (`activeAPL[specID]`). |
 | Lists | An APL holds N priority lists, each covering a target-count range (`1`, `2-4`, `5+`). Ranges may not overlap within a group; the editor rejects overlaps. Phase 5 puts lists into prioritized **groups** (see below). |
-| No match | If no list covers the current target count, or no entry in the list matches, show nothing. Phase 5: an active group with nothing to suggest falls through to the next group (open item 3); only after the last group does it show nothing. |
+| No match | If no list covers the current target count, or no entry in the list matches, show nothing. Phase 5: an active group with nothing to suggest falls through to the next group; only after the last group does it show nothing. |
 | Conditions | Both a point-and-click builder and a SimC-style text expression (`chi>=3&!buff.zenith.up`). Both edit the same stored condition. |
 | Openers | N opener list sets (ST/AOE like any other). Phase 5 models them as groups whose condition is "early in combat". |
 | Burst / conditional lists | List sets that take priority while a condition holds (e.g. Courage of the White Tiger or HotJS up). Phase 5, same mechanism as openers. |
@@ -86,8 +86,11 @@ evaluation. A variable may only use variables defined above it (no cycles).
 ### Entry rules
 
 An entry fires when: it is enabled, its spell (resolved to the current
-override) is off cooldown, it is not the last cast (if the APL option is
-on), and its condition is true. The suggestion is the resolved spell.
+override) is off cooldown and usable (`C_Spell.IsSpellUsable`: resources,
+requirements, talented; an entry can opt out with "Only When Usable" off),
+it is not the last cast (if the APL option is on), and its condition is
+true. The suggestion is the resolved spell. An unknown/secret usable value
+never blocks an entry.
 
 ### Windwalker mapped onto these
 
@@ -145,7 +148,7 @@ APLforEUIDB.apls[id] = <user APL>;  APLforEUIDB.activeAPL[specID] = id
    it beyond Windwalker yet).
 4. **Import/Export.** DONE. SimC-style text (format in `Exchange.lua`);
    import always adds a new APL, never replaces one.
-5. **List groups: openers and conditional lists.** See "Phase 5" below.
+5. **List groups: openers and conditional lists.** DONE. See "Phase 5" below.
 6. **Holding cooldowns.** See "Phase 6" below.
 
 ## Phase 5: list groups (openers, burst windows)
@@ -168,11 +171,19 @@ groups = {
 - **Ranges** may not overlap *within* a group; different groups can each
   have their own ST and AOE lists.
 - **New reads:** `combat.time` (seconds since entering combat) and
-  `combat.casts` (casts reported since entering combat), both unknown out of
-  combat. An opener is just a group using them; the editor offers an
-  "Opener" preset that fills in "first N casts or N seconds".
-- **Labels:** list prefixes stay per list (`OST3`, `BST1`, `ST9`), so every
-  label still names exactly one entry.
+  `combat.casts` (casts reported since entering combat). Both read 0 out of
+  combat, so an opener group already shows before the pull; counting starts
+  fresh on entering combat, so pre-pull casts (mounting, food) never use it
+  up. An opener is just a group using them; the editor's "Use Opener
+  Preset" fills in `combat.casts<5&combat.time<8`.
+- **Broken conditions:** a group whose condition doesn't compile is
+  skipped (and listed under Problems), never treated as always active.
+- **Labels:** widgets show prefixes, never names (names are for the
+  editor). Groups and lists each have a required 1-3 character prefix.
+  Entries: list prefix + position (`OST3`, `ST9`); a list prefix used twice
+  is reported under Problems. Status widget: "<group prefix>-<list prefix>"
+  (`OP-OST`, `DEF-AOE`). Groups saved or imported without a prefix get one
+  from their name ("Default" -> `DEF`).
 - **Migration:** an APL's existing `lists` become one group "Default" with
   no condition. Saved user APLs are converted on load; export moves to
   `format=2` (`group.<key>=<name>`, `group.<key>.if=...`, lists name their

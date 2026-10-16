@@ -115,14 +115,15 @@ Check(not Kit.Editable(), "built-in starts read-only")
 Build("Lists")
 local dup = Row("Duplicate to Edit")
 Check(dup ~= nil, "Duplicate to Edit button on Lists")
-Check(Row("Add List").disabled() == true, "Add List disabled on the built-in")
+Check(Row("Add Group").disabled() == true, "Add Group disabled on the built-in")
 
 -- 2. Duplicate, then open every row so all editors build.
 dup.onClick()
 local def = Kit.Def()
 Check(Kit.Editable() and def.id:find("^user:"), "duplicate selected and editable")
 local function OpenAll()
-    for _, l in ipairs(def.lists) do
+    for _, g in ipairs(def.groups) do Kit.state.open[g] = true end
+    for _, l in ipairs(def.groups[1].lists) do
         Kit.state.open[l] = true
         for _, e in ipairs(l.entries) do Kit.state.open[e] = true end
     end
@@ -138,15 +139,20 @@ for _, page in ipairs(mod.pages) do Build(page) end
 
 -- 3. Lists tab inputs.
 Build("Lists")
-Row("Prefix").setValue("ABCD")
-Check(def.lists[1].prefix == "ST", "4-character prefix rejected")
-Row("Prefix").setValue("S")
-Check(def.lists[1].prefix == "S", "prefix changed")
+local function ListPrefix()
+    for _, cfg in ipairs(rec.rows) do
+        if cfg.text == "Prefix" and cfg.tooltip and cfg.tooltip:find("entry's position", 1, true) then return cfg end
+    end
+end
+ListPrefix().setValue("ABCD")
+Check(def.groups[1].lists[1].prefix == "ST", "4-character prefix rejected")
+ListPrefix().setValue("S")
+Check(def.groups[1].lists[1].prefix == "S", "prefix changed")
 Build("Lists")
 Row("Max Targets").setValue("3")
-Check(def.lists[1].max == 1, "overlapping range rejected")
+Check(def.groups[1].lists[1].max == 1, "overlapping range rejected")
 Row("Add Entry").setValue("Fists of Fury")
-local st = def.lists[1].entries
+local st = def.groups[1].lists[1].entries
 Check(st[#st].spell == "fists_of_fury" and st[#st].when == "", "Add Entry by spell name")
 Row("Add Entry").setValue("No Such Spell")
 Check(st[#st].spell == "fists_of_fury", "unknown spell not added")
@@ -154,7 +160,8 @@ Check(st[#st].spell == "fists_of_fury", "unknown spell not added")
 -- 4. Builder: on a fresh entry, add a row and drive every category.
 local entry = st[#st]
 wipe(Kit.state.open)
-Kit.state.open[def.lists[1]] = true
+Kit.state.open[def.groups[1]] = true
+Kit.state.open[def.groups[1].lists[1]] = true
 Kit.state.open[entry] = true
 Kit.SetConditionMode("builder")
 Build("Lists")
@@ -215,6 +222,70 @@ for _, cfg in ipairs(rec.rows) do
     Check(not (cfg.type == "dropdown" and cfg.values and cfg.values.builder), "no per-condition Builder/Text row")
 end
 
+-- 4a. "Only When Usable" is on by default and can be switched off.
+wipe(Kit.state.open)
+Kit.state.open[def.groups[1]] = true
+Kit.state.open[def.groups[1].lists[1]] = true
+Kit.state.open[entry] = true
+Build("Lists")
+local usableRow = Row("Only When Usable")
+Check(usableRow and usableRow.getValue() == true, "new entries default to only when usable")
+usableRow.setValue(false)
+Check(entry.usable == false, "usable check switched off for the entry")
+usableRow.setValue(true)
+Check(entry.usable == nil, "switched back on (stored as the default)")
+-- The entry's on/off toggle is the last header toggle (it's the last entry).
+local onOff = rec.toggles[#rec.toggles]
+Check(onOff.get() == true, "entry starts switched on")
+onOff.set(false)
+Check(entry.enabled == false, "entry switched off from its header toggle")
+onOff.set(true)
+Check(entry.enabled == nil, "entry switched back on")
+
+-- 4b. Groups: add one, give it the opener preset, add a list to it.
+wipe(Kit.state.open)
+Build("Lists")
+Row("Add Group").onClick()
+local burst = def.groups[1]
+Check(#def.groups == 2 and burst.name == "Group 2" and #burst.lists == 1, "Add Group puts a new group on top with an ST list")
+Check(burst.lists[1].prefix ~= def.groups[2].lists[1].prefix, "new group's list gets its own prefix: " .. burst.lists[1].prefix)
+Build("Lists")
+Row("Use Opener Preset").onClick()
+Check(burst.when == Store.OPENER_PRESET, "opener preset fills the condition")
+Check(Engine.CheckExpr(def, burst.when), "opener preset compiles")
+Build("Lists")
+Row("Group Name").setValue("Opener")
+Check(burst.name == "Opener", "group renamed")
+Build("Lists")
+local gp
+for _, cfg in ipairs(rec.rows) do
+    if cfg.text == "Prefix" and cfg.tooltip and cfg.tooltip:find("group prefix", 1, true) then gp = cfg end
+end
+Check(burst.prefix == "G2", "new group starts with a G prefix: " .. tostring(burst.prefix))
+gp.setValue("OPEN")
+Check(burst.prefix == "G2", "4-character group prefix rejected")
+gp.setValue("")
+Check(burst.prefix == "G2", "empty group prefix rejected (required)")
+gp.setValue("OP")
+Check(burst.prefix == "OP", "group prefix set")
+Build("Lists")
+Row("Add List").onClick()
+Check(#burst.lists == 2 and burst.lists[2].min == 2, "Add List in the group takes its next free count")
+Check(#Engine.GetRuntime(def).errors == 0, "APL with two groups compiles: " .. tostring(Engine.GetRuntime(def).errors[1]))
+-- Builder on the group condition: the opener preset fits the builder.
+Kit.SetConditionMode("builder")
+Build("Lists")
+local castsRow = false
+for _, dd in ipairs(rec.dropdowns) do
+    if dd.values.combat_casts and dd.get() == "combat_casts" then castsRow = true end
+end
+Check(castsRow, "builder shows the opener preset as a Casts this combat row")
+-- Can't delete the last group.
+local saved = def.groups
+def.groups = { saved[2] }
+Build("Lists")
+def.groups = saved
+
 -- 5. Building Blocks: rename, counter limits, add blocks and triggers.
 OpenAll()
 Build("Building Blocks")
@@ -258,7 +329,7 @@ Check(def.name == "My WW", "rename via popup")
 Build("APLs")
 Row("New Empty APL").onClick()
 local blank = Kit.Def()
-Check(blank ~= def and #blank.lists == 2, "new empty APL selected")
+Check(blank ~= def and #blank.groups[1].lists == 2, "new empty APL selected")
 for _, page in ipairs(mod.pages) do Build(page) end
 Build("APLs")
 Row("Delete").onClick()

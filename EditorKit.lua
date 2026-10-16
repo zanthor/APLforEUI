@@ -402,7 +402,8 @@ local SPELL_READS = {
     { "channeling.", "" }, { "spell.", ".base_cd" },
 }
 local HEADS = { "buff.", "cooldown.", "charges.", "usable.", "talent.", "override.", "prev.",
-    "channeling.", "spell.", "resource.", "timer.", "counter.", "variable.", "targets", "bloodlust" }
+    "channeling.", "spell.", "resource.", "timer.", "counter.", "variable.", "combat.time",
+    "combat.casts", "targets", "bloodlust" }
 
 function Kit.Vocabulary(def)
     local all = {}

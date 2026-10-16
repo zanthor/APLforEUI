@@ -2,7 +2,7 @@
 -- usage: local S, ns, printed = dofile(dir .. "/tests/mock_wow.lua")(dir)
 -- S is the mutable game state the mocks read from.
 return function(dir)
-    local S = { now = 1000, chi = 3, buffs = {}, cd = {}, talents = {}, overrides = {}, zenCharges = 2, targets = 1,
+    local S = { now = 1000, unusable = {}, chi = 3, buffs = {}, cd = {}, talents = {}, overrides = {}, zenCharges = 2, targets = 1,
         spellNames = { [113656] = "Fists of Fury", [100780] = "Tiger Palm", [1249625] = "Zenith" } }
 
     -- Frame stub: unknown methods are no-ops; the ones UI code reads back
@@ -85,7 +85,7 @@ return function(dir)
                 local cost = 3 - (S.buffs[1249625] and 1 or 0) - (S.talents[1250041] and 1 or 0)
                 return S.chi >= math.max(1, cost), false
             end
-            return true, false
+            return not S.unusable[id], false
         end,
     }
     C_SpellBook = { IsSpellKnown = function(id) return S.talents[id] == true end }

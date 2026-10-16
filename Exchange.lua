@@ -15,9 +15,12 @@ local _, ns = ...
 --    timer|counter.<name>+=/<event>=<spell>,<action>[=<value>][,if=<cond>]
 --        event: cast | aura_present | aura_absent
 --        action: set | start | add | clear (timers); set | add | sub | reset
---    list.<key>=<display name>         list.<key>.prefix=ST
+--    group.<gkey>=<name>               group.<gkey>.if=<cond>   (in priority order)
+--    group.<gkey>.prefix=<1-3 chars>   (made from the name if missing)
+--    list.<key>=<display name>         list.<key>.prefix=ST     list.<key>.group=<gkey>
 --    list.<key>.targets=1 | 2-4 | 5+
---    actions.<key>+=/<spell>[,if=<cond>][,enabled=0]
+--    actions.<key>+=/<spell>[,if=<cond>][,enabled=0][,usable=0]
+--  Format 1 had no groups: its lists import as one "Default" group.
 --
 --  Fields split on commas outside parentheses, so max(a,b) stays intact.
 --  No UI code here.
@@ -25,7 +28,7 @@ local _, ns = ...
 local Exchange = {}
 ns.Exchange = Exchange
 
-local FORMAT = 1
+local FORMAT = 2
 local NO_VALUE = { clear = true, reset = true }
 local EVENTS = { cast = true, aura_present = true, aura_absent = true }
 local TIMER_ACTIONS = { set = true, start = true, add = true, clear = true }
@@ -107,18 +110,27 @@ function Exchange.Export(def)
         for _, trig in ipairs(c.triggers or {}) do L(TriggerLine("counter", c.name, trig)) end
     end
 
-    local taken = {}
-    for _, list in ipairs(def.lists or {}) do
-        local key = ListKey(list.name, taken)
+    local taken, groupTaken = {}, {}
+    for _, group in ipairs(def.groups or {}) do
+        local gkey = ListKey(group.name, groupTaken)
         L("")
-        L("list." .. key .. "=" .. list.name)
-        L("list." .. key .. ".prefix=" .. tostring(list.prefix))
-        L("list." .. key .. ".targets=" .. Targets(list))
-        for _, e in ipairs(list.entries or {}) do
-            local line = "actions." .. key .. "+=/" .. tostring(e.spell)
-            if e.when and e.when ~= "" then line = line .. ",if=" .. e.when end
-            if e.enabled == false then line = line .. ",enabled=0" end
-            L(line)
+        L("group." .. gkey .. "=" .. group.name)
+        L("group." .. gkey .. ".prefix=" .. tostring(group.prefix))
+        if group.when and group.when ~= "" then L("group." .. gkey .. ".if=" .. group.when) end
+        for _, list in ipairs(group.lists or {}) do
+            local key = ListKey(list.name, taken)
+            L("")
+            L("list." .. key .. "=" .. list.name)
+            L("list." .. key .. ".group=" .. gkey)
+            L("list." .. key .. ".prefix=" .. tostring(list.prefix))
+            L("list." .. key .. ".targets=" .. Targets(list))
+            for _, e in ipairs(list.entries or {}) do
+                local line = "actions." .. key .. "+=/" .. tostring(e.spell)
+                if e.when and e.when ~= "" then line = line .. ",if=" .. e.when end
+                if e.enabled == false then line = line .. ",enabled=0" end
+                if e.usable == false then line = line .. ",usable=0" end
+                L(line)
+            end
         end
     end
     return table.concat(out, "\n") .. "\n"
@@ -176,11 +188,22 @@ function Exchange.Import(text)
     text = (text or ""):gsub("|+", "|")
     local def = {
         name = "Imported APL", options = {}, names = {}, tts = {},
-        variables = {}, timers = {}, counters = {}, lists = {},
+        variables = {}, timers = {}, counters = {}, groups = {},
     }
     local errors = {}
     local blocks = { timer = {}, counter = {} }
-    local lists = {}
+    local lists, listOrder = {}, {}
+    local groups, groupOrder = {}, {}
+
+    local function Group(key)
+        local g = groups[key]
+        if not g then
+            g = { name = key, lists = {} }
+            groups[key] = g
+            groupOrder[#groupOrder + 1] = g
+        end
+        return g
+    end
     local sawAny = false
 
     local function Err(n, msg) errors[#errors + 1] = "line " .. n .. ": " .. msg end
@@ -202,7 +225,7 @@ function Exchange.Import(text)
         if not l then
             l = { name = key, prefix = key:sub(1, 3):upper(), min = 1, max = 1, entries = {} }
             lists[key] = l
-            def.lists[#def.lists + 1] = l
+            listOrder[#listOrder + 1] = l
         end
         return l
     end
@@ -289,10 +312,23 @@ function Exchange.Import(text)
                             else Err(n, "counter fields are initial=, min= and max= numbers") end
                         end
                     end
+                elseif head == "group" and a ~= "" then
+                    local g = Group(a)
+                    if b == "" then
+                        if val ~= "" then g.name = val end
+                    elseif b == "if" then
+                        g.when = val ~= "" and val or nil
+                    elseif b == "prefix" then
+                        g.prefix = val ~= "" and val or nil
+                    else
+                        Err(n, "unknown group field '" .. b .. "'")
+                    end
                 elseif head == "list" and a ~= "" then
                     local l = List(a)
                     if b == "" then
                         if val ~= "" then l.name = val end
+                    elseif b == "group" then
+                        l.groupKey = val
                     elseif b == "prefix" then
                         l.prefix = val
                     elseif b == "targets" then
@@ -309,6 +345,8 @@ function Exchange.Import(text)
                     for i = 2, #parts do
                         local k, v = KV(parts[i])
                         if k == "if" then entry.when = v ~= "" and v or nil
+                        elseif k == "usable" then
+                            if v == "0" then entry.usable = false end
                         elseif k == "enabled" then
                             if v == "0" then entry.enabled = false end
                         else Err(n, "unknown action field '" .. tostring(k) .. "'") end
@@ -321,6 +359,27 @@ function Exchange.Import(text)
             end
         end
     end
+
+    -- Lists join their group (in the order lists first appeared); lists
+    -- without one (format 1 text) go to a "Default" group at the bottom.
+    for _, l in ipairs(listOrder) do
+        local key = l.groupKey
+        l.groupKey = nil
+        local g
+        if key then
+            g = Group(key)
+        else
+            g = groups["\0default"]
+            if not g then
+                g = { name = "Default", lists = {} }
+                groups["\0default"] = g
+            end
+        end
+        g.lists[#g.lists + 1] = l
+    end
+    for _, g in ipairs(groupOrder) do def.groups[#def.groups + 1] = g end
+    if groups["\0default"] then def.groups[#def.groups + 1] = groups["\0default"] end
+    ns.Engine.Migrate(def)  -- fills any missing group prefix
 
     if not sawAny then errors[#errors + 1] = "nothing to import" end
     if not def.specID and sawAny then errors[#errors + 1] = "missing spec= line" end

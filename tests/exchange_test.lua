@@ -85,13 +85,17 @@ local edge = {
         { on = "cast", spell = "b_2", action = "add", value = "max(1,2)", when = "!timer.t.up|(a=b_2)" },
     } } },
     counters = { { name = "c", initial = 0, min = -1, triggers = { { on = "cast", spell = "a", action = "reset" } } } },
-    lists = {
-        { name = "Single Target", prefix = "S", min = 1, max = 1, entries = {
-            { spell = "a", when = "" },
-            { spell = "b_2", when = "variable.v&prev.a", enabled = false },
+    groups = {
+        { name = "Burst, = hot", prefix = "BU", when = "!timer.t.up|combat.casts<3", lists = {
+            { name = "Single Target", prefix = "S", min = 1, max = 1, entries = {
+                { spell = "a" },
+                { spell = "b_2", when = "variable.v&prev.a", enabled = false, usable = false },
+            } },
         } },
-        { name = "Single-Target", prefix = "AOE", min = 2, max = 4, entries = {} },
-        { name = "9 Lives", prefix = "L", min = 5, entries = {} },
+        { name = "Default", prefix = "DF", lists = {
+            { name = "Single-Target", prefix = "AOE", min = 2, max = 4, entries = {} },
+            { name = "9 Lives", prefix = "L", min = 5, entries = {} },
+        } },
     },
 }
 local edgeText = Exchange.Export(edge)
@@ -103,11 +107,16 @@ if back then
     Check(back.tts.a == "Say # this, too", "tts text kept verbatim")
     Check(back.timers[1].triggers[2].value == "max(1,2)", "comma inside parentheses kept")
     Check(back.timers[1].triggers[2].when == "!timer.t.up|(a=b_2)", "condition with = kept")
-    Check(back.lists[1].entries[2].enabled == false and back.lists[1].entries[1].enabled == nil, "enabled flags")
+    local g1, g2 = back.groups[1], back.groups[2]
+    Check(#back.groups == 2 and g1.name == "Burst, = hot" and g2.name == "Default", "groups kept in order")
+    Check(g1.when == "!timer.t.up|combat.casts<3" and g2.when == nil, "group conditions kept")
+    Check(g1.prefix == "BU" and g2.prefix == "DF", "group prefixes kept")
+    Check(g1.lists[1].entries[2].enabled == false and g1.lists[1].entries[1].enabled == nil, "enabled flags")
+    Check(g1.lists[1].entries[2].usable == false and g1.lists[1].entries[1].usable == nil, "usable opt-out kept")
     Check(back.counters[1].min == -1 and back.counters[1].max == nil, "counter limits")
-    Check(back.lists[3].min == 5 and back.lists[3].max == nil, "open-ended range")
-    Check(back.lists[2].min == 2 and back.lists[2].max == 4, "bounded range")
-    Check(#back.lists == 3 and back.lists[2].name == "Single-Target", "list keys stay distinct")
+    Check(g2.lists[2].min == 5 and g2.lists[2].max == nil, "open-ended range")
+    Check(g2.lists[1].min == 2 and g2.lists[1].max == 4, "bounded range")
+    Check(#g1.lists == 1 and #g2.lists == 2 and g2.lists[1].name == "Single-Target", "lists stay in their groups")
 end
 
 -- 3. Hand-written text: comments, spacing, actions before their list line.
@@ -121,7 +130,10 @@ list.st.targets=1
 local h, he = Exchange.Import(hand)
 Check(h ~= nil, "hand-written import: " .. tostring(he and he[1]))
 if h then
-    Check(h.lists[1].prefix == "ST" and h.lists[1].name == "st" and h.lists[1].entries[1].when == "prev.a", "defaults for a bare list")
+    local hl = h.groups[1] and h.groups[1].lists[1]
+    Check(#h.groups == 1 and h.groups[1].name == "Default" and h.groups[1].prefix == "DEF",
+        "format-1 text becomes one Default group with prefix DEF")
+    Check(hl and hl.prefix == "ST" and hl.name == "st" and hl.entries[1].when == "prev.a", "defaults for a bare list")
     Check(h.names.a == 100780, "trailing comment on a name line ignored")
     Check(h.name == "Imported APL", "default name")
 end

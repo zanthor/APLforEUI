@@ -126,6 +126,7 @@ local function ReportCast(spellID, expected)
     local expectedStep = expected and expected.step
     local brokeMastery = spellID == ns.lastCastSpellID
     if InCombatLockdown() then
+        ns.combatCasts = (ns.combatCasts or 0) + 1
         local matched = not brokeMastery and spellID == expectedSpellID
         RecordStatsEntry(matched, brokeMastery)
         if ns.chatOutput then
@@ -325,6 +326,19 @@ function ns.StopTracking()
     if _trackedRT then ns.Engine.Reset(_trackedRT) end
     _trackedSpecID, _trackedRT = nil, nil
 end
+
+-- combat.time / combat.casts (Engine.lua): reset on entering combat, so
+-- casts before the pull (mounting, food) never count toward an opener.
+local combatFrame = CreateFrame("Frame")
+combatFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+combatFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_DISABLED" then
+        ns.combatStart, ns.combatCasts = GetTime(), 0
+    else
+        ns.combatStart, ns.combatCasts = nil, nil
+    end
+end)
 
 local specFrame = CreateFrame("Frame")
 specFrame:RegisterEvent("PLAYER_LOGIN")

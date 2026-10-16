@@ -107,10 +107,14 @@ function Store.New(specID)
         specID = specID,
         options = { noRepeatLastCast = false },
         names = {}, tts = {}, variables = {}, timers = {}, counters = {},
-        lists = {
-            { name = "ST", prefix = "ST", min = 1, max = 1, entries = {} },
-            { name = "AOE", prefix = "AOE", min = 2, entries = {} },
-        },
+        groups = { {
+            name = "Default",
+            prefix = "DEF",
+            lists = {
+                { name = "ST", prefix = "ST", min = 1, max = 1, entries = {} },
+                { name = "AOE", prefix = "AOE", min = 2, entries = {} },
+            },
+        } },
     }
     DB().apls[def.id] = def
     return def
@@ -181,13 +185,62 @@ function Store.EnsureName(def, spellID, spellName)
 end
 
 -------------------------------------------------------------------------------
---  Lists and entries
+--  Groups, lists and entries
 -------------------------------------------------------------------------------
 
--- Target ranges may not overlap. Returns nil or a message naming the clash.
+-- Calls fn(list, group) for every list in def, groups in order.
+function Store.EachList(def, fn)
+    for _, group in ipairs(def.groups or {}) do
+        for _, list in ipairs(group.lists or {}) do fn(list, group) end
+    end
+end
+
+function Store.GroupOf(def, list)
+    for _, group in ipairs(def.groups or {}) do
+        for _, l in ipairs(group.lists or {}) do if l == list then return group end end
+    end
+    return nil
+end
+
+-- Prefix not used by any list yet, from a preferred one ("BST", "BS2", ...).
+local function FreePrefix(def, want)
+    local used = {}
+    Store.EachList(def, function(l) used[l.prefix or ""] = true end)
+    want = (want or "L"):sub(1, 3)
+    if not used[want] then return want end
+    for n = 2, 99 do
+        local p = want:sub(1, 3 - #tostring(n)) .. n
+        if not used[p] then return p end
+    end
+    return want
+end
+
+-- New group at the top (highest priority), with an ST list, since new
+-- groups are usually openers or burst windows layered over the default.
+function Store.AddGroup(def)
+    def.groups = def.groups or {}
+    local n = #def.groups + 1
+    local used = {}
+    for _, g in ipairs(def.groups) do used[g.prefix or ""] = true end
+    local k = n
+    while used["G" .. k] do k = k + 1 end
+    local group = { name = "Group " .. n, prefix = "G" .. k, when = "", lists = {} }
+    group.lists[1] = { name = "ST", prefix = FreePrefix(def, "G" .. n .. "S"), min = 1, max = 1, entries = {} }
+    table.insert(def.groups, 1, group)
+    Store.Changed(def)
+    return group
+end
+
+-- Fills a group's condition with the opener preset: the first N casts or S
+-- seconds of combat (and before the pull, where both read 0).
+Store.OPENER_PRESET = "combat.casts<5&combat.time<8"
+
+-- Target ranges may not overlap within a group. Returns nil or a message
+-- naming the clash.
 function Store.RangeConflict(def, list, min, max)
     local hi = max or math.huge
-    for _, other in ipairs(def.lists) do
+    local group = Store.GroupOf(def, list)
+    for _, other in ipairs(group and group.lists or {}) do
         if other ~= list then
             local oHi = other.max or math.huge
             if min <= oHi and other.min <= hi then
@@ -198,13 +251,13 @@ function Store.RangeConflict(def, list, min, max)
     return nil
 end
 
--- Lowest free target count, for a new list's default range.
-local function NextFreeMin(def)
+-- Lowest free target count in a group, for a new list's default range.
+local function NextFreeMin(group)
     local n = 1
     local moved = true
     while moved do
         moved = false
-        for _, l in ipairs(def.lists) do
+        for _, l in ipairs(group.lists) do
             if n >= l.min and (not l.max or n <= l.max) then
                 if not l.max then return nil end
                 n = l.max + 1
@@ -215,11 +268,12 @@ local function NextFreeMin(def)
     return n
 end
 
-function Store.AddList(def)
-    local min = NextFreeMin(def)
-    if not min then return nil, "every target count already has a list" end
-    local list = { name = "List " .. (#def.lists + 1), prefix = "L" .. (#def.lists + 1), min = min, max = min, entries = {} }
-    def.lists[#def.lists + 1] = list
+function Store.AddList(def, group)
+    local min = NextFreeMin(group)
+    if not min then return nil, "every target count in this group already has a list" end
+    local n = #group.lists + 1
+    local list = { name = "List " .. n, prefix = FreePrefix(def, "L" .. n), min = min, max = min, entries = {} }
+    group.lists[n] = list
     Store.Changed(def)
     return list
 end
@@ -264,8 +318,11 @@ local function EachExpr(def, fn)
             end
         end
     end
-    for _, l in ipairs(def.lists or {}) do
-        for _, e in ipairs(l.entries or {}) do fn(e, "when") end
+    for _, group in ipairs(def.groups or {}) do
+        fn(group, "when")
+        for _, l in ipairs(group.lists or {}) do
+            for _, e in ipairs(l.entries or {}) do fn(e, "when") end
+        end
     end
 end
 
@@ -312,9 +369,9 @@ function Store.RenameBlock(def, kind, item, new)
         def.names[new] = def.names[old]
         def.names[old] = nil
         if def.tts and def.tts[old] then def.tts[new], def.tts[old] = def.tts[old], nil end
-        for _, l in ipairs(def.lists or {}) do
+        Store.EachList(def, function(l)
             for _, e in ipairs(l.entries or {}) do if e.spell == old then e.spell = new end end
-        end
+        end)
         for _, group in ipairs({ def.timers or {}, def.counters or {} }) do
             for _, t in ipairs(group) do
                 for _, trig in ipairs(t.triggers or {}) do if trig.spell == old then trig.spell = new end end

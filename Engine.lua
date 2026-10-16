@@ -184,6 +184,16 @@ local function MakeResolver(rt)
                 if v == NIL then return nil end
                 return v
             end
+        elseif head == "combat" then
+            -- Since entering combat; 0 out of combat, so an opener group
+            -- is already showing before the pull.
+            Want(path, 2, "combat.time or combat.casts")
+            if a == "time" then
+                return function() return ns.combatStart and (GetTime() - ns.combatStart) or 0 end
+            elseif a == "casts" then
+                return function() return ns.combatCasts or 0 end
+            end
+            Fail("unknown combat field '" .. a .. "'")
         elseif head == "targets" then
             Want(path, 1, "targets")
             return function(ctx)
@@ -270,7 +280,7 @@ function Engine.Compile(def)
         def = def, name = def.name, specID = def.specID,
         names = def.names or {},
         timers = {}, counters = {}, trackers = {},
-        varFns = {}, lists = {}, errors = {}, tts = {},
+        varFns = {}, groups = {}, errors = {}, tts = {},
         ctx = { vars = {} },
     }
     local options = def.options or {}
@@ -310,35 +320,83 @@ function Engine.Compile(def)
         rt.trackers[#rt.trackers + 1] = tracker
     end
 
-    for _, ldef in ipairs(def.lists or {}) do
-        local list = { name = ldef.name, min = ldef.min or 1, max = ldef.max, entries = {} }
-        local prefix = ldef.prefix
-        if not Engine.ValidPrefix(prefix) then
-            err("list " .. tostring(ldef.name), "prefix must be 1-3 characters")
-            prefix = "?"
+    Engine.Migrate(def)
+    local prefixUsedBy = {}
+    for _, gdef in ipairs(def.groups or {}) do
+        local group = { name = gdef.name, lists = {} }
+        -- Prefixes are what the widgets show; names are only for the editor.
+        local gshort = gdef.prefix
+        if not Engine.ValidPrefix(gshort) then
+            err("group " .. tostring(gdef.name), "prefix must be 1-3 characters")
+            gshort = "?"
         end
-        for i, edef in ipairs(ldef.entries or {}) do
-            -- Label = list prefix + position; disabled entries keep their
-            -- number so toggling one doesn't renumber the rest.
-            local label = prefix .. i
-            local where = "list " .. tostring(ldef.name) .. " entry " .. label
-            local id = rt.names[edef.spell or ""]
-            if not id then
-                err(where, "unknown name '" .. tostring(edef.spell) .. "'")
-            elseif edef.enabled ~= false then
-                local entry = { spellID = id, label = label }
-                local ok = true
-                if edef.when and edef.when ~= "" then
-                    local fn, e = Expr.Compile(edef.when, resolve)
-                    if fn then entry.when = fn else err(where, e); ok = false end
-                end
-                if ok then list.entries[#list.entries + 1] = entry end
+        if gdef.when and gdef.when ~= "" then
+            local fn, e = Expr.Compile(gdef.when, resolve)
+            -- A broken condition must not read as "always": skip the group.
+            if fn then group.when = fn else err("group " .. tostring(gdef.name), e); group.broken = true end
+        end
+        for _, ldef in ipairs(gdef.lists or {}) do
+            -- Status widget label: "<group prefix>-<list prefix>".
+            local display = gshort .. "-" .. tostring(ldef.prefix)
+            local list = { name = display, min = ldef.min or 1, max = ldef.max, entries = {} }
+            local prefix = ldef.prefix
+            if not Engine.ValidPrefix(prefix) then
+                err("list " .. tostring(ldef.name), "prefix must be 1-3 characters")
+                prefix = "?"
+            elseif prefixUsedBy[prefix] then
+                err("list " .. tostring(ldef.name), "prefix '" .. prefix .. "' is also used by list '"
+                    .. tostring(prefixUsedBy[prefix]) .. "'; labels would be ambiguous")
+            else
+                prefixUsedBy[prefix] = ldef.name
             end
+            for i, edef in ipairs(ldef.entries or {}) do
+                -- Label = list prefix + position; disabled entries keep their
+                -- number so toggling one doesn't renumber the rest.
+                local label = prefix .. i
+                local where = "list " .. tostring(ldef.name) .. " entry " .. label
+                local id = rt.names[edef.spell or ""]
+                if not id then
+                    err(where, "unknown name '" .. tostring(edef.spell) .. "'")
+                elseif edef.enabled ~= false then
+                    -- usable = false opts an entry out of the default
+                    -- "only when usable" check (design.md, Entry rules).
+                    local entry = { spellID = id, label = label, checkUsable = edef.usable ~= false }
+                    local ok = true
+                    if edef.when and edef.when ~= "" then
+                        local fn, e = Expr.Compile(edef.when, resolve)
+                        if fn then entry.when = fn else err(where, e); ok = false end
+                    end
+                    if ok then list.entries[#list.entries + 1] = entry end
+                end
+            end
+            group.lists[#group.lists + 1] = list
         end
-        rt.lists[#rt.lists + 1] = list
+        CheckRanges(group.lists, err)
+        rt.groups[#rt.groups + 1] = group
     end
-    CheckRanges(rt.lists, err)
     return rt
+end
+
+-- Short prefix from a name: "Burst Window" -> "BUR", "Default" -> "DEF".
+function Engine.PrefixFromName(name, fallback)
+    local p = tostring(name or ""):gsub("[^%w]", ""):sub(1, 3):upper()
+    return p ~= "" and p or fallback
+end
+
+-- Pre-group APLs had one flat "lists" array: it becomes a single
+-- unconditional "Default" group. Groups saved before prefixes were
+-- required get one from their name. Safe to call repeatedly.
+function Engine.Migrate(def)
+    if def.lists and not def.groups then
+        def.groups = { { name = "Default", prefix = "DEF", lists = def.lists } }
+        def.lists = nil
+    end
+    for i, group in ipairs(def.groups or {}) do
+        if group.prefix == nil or group.prefix == "" then
+            group.prefix = Engine.PrefixFromName(group.name, "G" .. i)
+        end
+    end
+    return def
 end
 
 function Engine.ValidPrefix(prefix)
@@ -350,35 +408,46 @@ end
 -------------------------------------------------------------------------------
 --  Evaluate
 -------------------------------------------------------------------------------
-local function PickList(rt, targets)
+local function PickList(group, targets)
     local n = targets < 1 and 1 or targets
-    for _, list in ipairs(rt.lists) do
+    for _, list in ipairs(group.lists) do
         if n >= list.min and (not list.max or n <= list.max) then return list end
     end
     return nil
 end
 
--- Name of the list the current target count selects, or nil for none.
+-- Name of the list that produced the last suggestion (the status widget's
+-- label), or nil when nothing was suggested.
 function Engine.CurrentListName(rt)
-    local list = PickList(rt, ns.GetTargetCount(rt.rangeSpellID))
-    return list and list.name
+    return rt.lastListName
 end
 
--- Returns (spellID, label, listName), or nil when nothing applies.
+-- Groups top to bottom: the first whose condition holds and that has a
+-- list for the target count gets to suggest; if that list has nothing, the
+-- next group gets a turn (design.md, phase 5). Returns (spellID, label,
+-- listName), or nil when nothing applies.
 function Engine.Evaluate(rt)
     local ctx = rt.ctx
     wipe(ctx.vars)
     ctx.targets = ns.GetTargetCount(rt.rangeSpellID)
-    local list = PickList(rt, ctx.targets)
-    if not list then return nil end
     local last = ns.lastCastSpellID
-    for _, entry in ipairs(list.entries) do
-        local sid = ResolveOverride(entry.spellID)
-        if not (rt.noRepeat and sid == last) and Ready(sid)
-            and (not entry.when or Truthy(entry.when(ctx))) then
-            return sid, entry.label, list.name
+    for _, group in ipairs(rt.groups) do
+        if not group.broken and (not group.when or Truthy(group.when(ctx))) then
+            local list = PickList(group, ctx.targets)
+            if list then
+                for _, entry in ipairs(list.entries) do
+                    local sid = ResolveOverride(entry.spellID)
+                    if not (rt.noRepeat and sid == last) and Ready(sid)
+                        and (not entry.checkUsable or Usable(sid) ~= 0)
+                        and (not entry.when or Truthy(entry.when(ctx))) then
+                        rt.lastListName = list.name
+                        return sid, entry.label, list.name
+                    end
+                end
+            end
         end
     end
+    rt.lastListName = nil
     return nil
 end
 
@@ -492,6 +561,16 @@ end
 -------------------------------------------------------------------------------
 --  APL selection: user APLs (saved variables) and built-ins (Defaults/*.lua)
 -------------------------------------------------------------------------------
+-- Saved APLs from before groups existed are converted as soon as the saved
+-- variables are available.
+local migrateFrame = CreateFrame("Frame")
+migrateFrame:RegisterEvent("ADDON_LOADED")
+migrateFrame:SetScript("OnEvent", function(self, _, addon)
+    if addon ~= "APLforEUI" then return end
+    self:UnregisterEvent("ADDON_LOADED")
+    for _, def in pairs(ns.DB().apls or {}) do Engine.Migrate(def) end
+end)
+
 local _builtins, _builtinBySpec = {}, {}
 local _runtimes = setmetatable({}, { __mode = "k" })
 

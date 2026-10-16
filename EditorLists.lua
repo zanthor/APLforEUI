@@ -1,8 +1,9 @@
 local _, ns = ...
 
 -------------------------------------------------------------------------------
---  APL editor, Lists tab: each list (name, prefix, target range) and its
---  entries (spell, on/off, condition), checked top to bottom.
+--  APL editor, Lists tab: groups (name, "active when" condition, priority
+--  order), each with its lists (name, prefix, target range) and their
+--  entries (spell, on/off, condition). design.md, phase 5.
 -------------------------------------------------------------------------------
 local Kit = ns.EditorKit
 local Store = ns.Store
@@ -97,14 +98,15 @@ local function BuildListBody(parent, y, def, list, editable)
     for j, entry in ipairs(list.entries) do
         local open = Kit.IsOpen(entry)
         y = Kit.Header(parent, y, {
-            depth = 1,
+            depth = 2,
             title = "|cff909090" .. tostring(list.prefix) .. j .. "|r   " .. SpellLabel(def, entry.spell)
                 .. "   |cff707070" .. Preview(entry.when) .. "|r",
             open = open, editable = editable, index = j, count = count,
             onClick = function() Kit.Toggle(entry) end,
             onMove = function(d) Store.Move(def, list.entries, j, d); Kit.Rebuild() end,
             getOn = function() return entry.enabled ~= false end,
-            setOn = function(v) entry.enabled = (not v) and false or nil; Store.Changed(def) end,
+            -- false when off; nil (the default) when on.
+            setOn = function(v) if v then entry.enabled = nil else entry.enabled = false end; Store.Changed(def) end,
             onTip = "Switched-off entries stay in the list but are never suggested.",
             onDelete = function()
                 Kit.Confirm("Remove entry " .. list.prefix .. j .. " (" .. SpellLabel(def, entry.spell) .. ")?", function()
@@ -124,7 +126,11 @@ local function BuildListBody(parent, y, def, list, editable)
                       local name = SpellFromText(def, v)
                       if name and name ~= entry.spell then entry.spell = name; Store.Changed(def); Kit.Rebuild() end
                   end },
-                { type = "label", text = "|cff909090Short name: " .. tostring(entry.spell) .. "|r" })
+                { type = "toggle", text = "Only When Usable",
+                  tooltip = "Skip this entry while the game says the spell can't be cast (resources, requirements, not talented). Leave on unless the game's usable flag is wrong for this spell.",
+                  disabled = ro, disabledTooltip = Kit.READ_ONLY_TIP,
+                  getValue = function() return entry.usable ~= false end,
+                  setValue = function(v) if v then entry.usable = nil else entry.usable = false end; Store.Changed(def) end })
             y = y - h
             y = Kit.Condition(parent, y, def, {
                 owner = entry, editable = editable, label = "Condition",
@@ -144,6 +150,91 @@ local function BuildListBody(parent, y, def, list, editable)
               if not name then return end
               local entry = Store.AddEntry(def, list, name)
               Kit.state.open[entry] = true
+              Kit.Rebuild()
+          end },
+        { type = "spacer" })
+    return y - h
+end
+
+local function GroupTitle(group)
+    local count = #(group.lists or {})
+    local cond = (group.when and group.when ~= "") and ("active when " .. Preview(group.when)) or "always active"
+    return group.name .. "   |cff909090" .. tostring(group.prefix) .. "  |  " .. cond .. "  |  " .. count .. (count == 1 and " list" or " lists") .. "|r"
+end
+
+-- One group's open body: name, condition, opener preset, its lists.
+local function BuildGroupBody(parent, y, def, group, editable)
+    local W = EllesmereUI.Widgets
+    local _, h
+    local ro = function() return not editable end
+
+    _, h = W:DualRow(parent, y,
+        { type = "input", text = "Group Name", inputWidth = 170, inputStyle = "popup",
+          disabled = ro, disabledTooltip = Kit.READ_ONLY_TIP,
+          getValue = function() return group.name end,
+          setValue = function(v)
+              v = v:match("^%s*(.-)%s*$")
+              if v ~= "" and v ~= group.name then group.name = v; Store.Changed(def); Kit.Rebuild() end
+          end },
+        { type = "input", text = "Prefix", inputWidth = 60, inputStyle = "popup",
+          tooltip = "1-3 characters. The status widget shows <group prefix>-<list prefix> (OP-ST); the name is only for this editor.",
+          disabled = ro, disabledTooltip = Kit.READ_ONLY_TIP,
+          getValue = function() return group.prefix or "" end,
+          setValue = function(v)
+              v = v:match("^%s*(.-)%s*$")
+              if v == group.prefix then return end
+              if not Engine.ValidPrefix(v) then Say("a prefix must be 1-3 characters.") return end
+              group.prefix = v
+              Store.Changed(def)
+              Kit.Rebuild()
+          end })
+    y = y - h
+    _, h = W:DualRow(parent, y,
+        { type = "button", text = "Use Opener Preset",
+          tooltip = "Active for the first 5 casts or 8 seconds of combat (and before the pull). Edit the numbers below.",
+          disabled = ro, disabledTooltip = Kit.READ_ONLY_TIP,
+          onClick = function()
+              group.when = Store.OPENER_PRESET
+              Store.Changed(def)
+              Kit.Rebuild()
+          end },
+        { type = "spacer" })
+    y = y - h
+    y = Kit.Condition(parent, y, def, {
+        owner = group, editable = editable, label = "Active When",
+        get = function() return group.when end,
+        set = function(t) group.when = t; Store.Changed(def) end,
+    })
+
+    local count = #group.lists
+    for i, list in ipairs(group.lists) do
+        local open = Kit.IsOpen(list)
+        y = Kit.Header(parent, y, {
+            depth = 1,
+            title = list.name .. "   |cff909090" .. tostring(list.prefix) .. "  |  " .. RangeText(list)
+                .. "  |  " .. #list.entries .. (#list.entries == 1 and " entry" or " entries") .. "|r",
+            open = open, editable = editable, index = i, count = count,
+            tooltip = "This group's list for target counts in its range.",
+            onClick = function() Kit.Toggle(list) end,
+            onMove = function(d) Store.Move(def, group.lists, i, d); Kit.Rebuild() end,
+            onDelete = function()
+                Kit.Confirm("Delete the list \"" .. list.name .. "\" and its " .. #list.entries .. " entries?", function()
+                    Store.Remove(def, group.lists, i)
+                    Kit.Rebuild()
+                end)
+            end,
+            deleteTip = "Delete list",
+        })
+        if open then y = BuildListBody(parent, y, def, list, editable) end
+    end
+
+    _, h = W:DualRow(parent, y,
+        { type = "button", text = "Add List",
+          disabled = ro, disabledTooltip = Kit.READ_ONLY_TIP,
+          onClick = function()
+              local list, why = Store.AddList(def, group)
+              if not list then Say("can't add a list: " .. why .. ". Give an existing list a max target count first.") return end
+              Kit.state.open[list] = true
               Kit.Rebuild()
           end },
         { type = "spacer" })
@@ -172,35 +263,35 @@ function Editor.BuildListsPage(parent, yOffset)
     end
 
     y = Kit.Problems(parent, y, def)
-    _, h = W:SectionHeader(parent, "LISTS", y); y = y - h
-    local count = #def.lists
-    for i, list in ipairs(def.lists) do
-        local open = Kit.IsOpen(list)
+    _, h = W:SectionHeader(parent, "GROUPS", y); y = y - h
+    y = Kit.Note(parent, y, "Groups are tried top to bottom. The first active group with a list for the target count suggests; if that list has nothing, the next group gets a turn.")
+    local groups = def.groups or {}
+    for i, group in ipairs(groups) do
+        local open = Kit.IsOpen(group)
         y = Kit.Header(parent, y, {
-            title = list.name .. "   |cff909090" .. tostring(list.prefix) .. "  |  " .. RangeText(list)
-                .. "  |  " .. #list.entries .. (#list.entries == 1 and " entry" or " entries") .. "|r",
-            open = open, editable = editable, index = i, count = count,
-            tooltip = "The list used while the target count is in its range.",
-            onClick = function() Kit.Toggle(list) end,
-            onMove = function(d) Store.Move(def, def.lists, i, d); Kit.Rebuild() end,
-            onDelete = function()
-                Kit.Confirm("Delete the list \"" .. list.name .. "\" and its " .. #list.entries .. " entries?", function()
-                    Store.Remove(def, def.lists, i)
+            title = GroupTitle(group),
+            open = open, editable = editable, index = i, count = #groups,
+            tooltip = "A set of lists that takes priority over the groups below it while its condition holds.",
+            onClick = function() Kit.Toggle(group) end,
+            onMove = function(d) Store.Move(def, groups, i, d); Kit.Rebuild() end,
+            onDelete = #groups > 1 and function()
+                Kit.Confirm("Delete the group \"" .. group.name .. "\" and all its lists?", function()
+                    Store.Remove(def, groups, i)
                     Kit.Rebuild()
                 end)
-            end,
-            deleteTip = "Delete list",
+            end or nil,
+            deleteTip = "Delete group",
         })
-        if open then y = BuildListBody(parent, y, def, list, editable) end
+        if open then y = BuildGroupBody(parent, y, def, group, editable) end
     end
 
     _, h = W:DualRow(parent, y,
-        { type = "button", text = "Add List",
+        { type = "button", text = "Add Group",
+          tooltip = "Adds a group at the top (highest priority), for an opener or a burst window.",
           disabled = function() return not editable end, disabledTooltip = Kit.READ_ONLY_TIP,
           onClick = function()
-              local list, why = Store.AddList(def)
-              if not list then Say("can't add a list: " .. why .. ". Give an existing list a max target count first.") return end
-              Kit.state.open[list] = true
+              local group = Store.AddGroup(def)
+              Kit.state.open[group] = true
               Kit.Rebuild()
           end },
         { type = "spacer" })

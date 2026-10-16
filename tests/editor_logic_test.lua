@@ -59,7 +59,7 @@ for _, group in ipairs({ builtin.timers, builtin.counters }) do
         end
     end
 end
-for _, l in ipairs(builtin.lists) do
+for _, l in ipairs(builtin.groups[1].lists) do
     for _, e in ipairs(l.entries) do if e.when then texts[#texts + 1] = e.when end end
 end
 
@@ -139,13 +139,13 @@ Check(Engine.CheckExpr(copy, "") == true, "empty condition is valid")
 Check(Engine.ValidPrefix("ST") and Engine.ValidPrefix("AOE") and not Engine.ValidPrefix("ABCD")
     and not Engine.ValidPrefix("") and not Engine.ValidPrefix(nil), "prefix validation")
 
-local st, aoe = copy.lists[1], copy.lists[2]
+local st, aoe = copy.groups[1].lists[1], copy.groups[1].lists[2]
 Check(Store.RangeConflict(copy, st, 1, 3) ~= nil, "1-3 overlaps AOE 2+")
 Check(Store.RangeConflict(copy, st, 1, 1) == nil, "1-1 is fine")
-local l, why = Store.AddList(copy)
+local l, why = Store.AddList(copy, copy.groups[1])
 Check(l == nil and why ~= nil, "no free target count with an unbounded list")
 aoe.max = 4
-l = Store.AddList(copy)
+l = Store.AddList(copy, copy.groups[1])
 Check(l and l.min == 5 and l.max == 5, "new list takes the next free count")
 Check(#Engine.GetRuntime(copy).errors == 0, "copy still compiles after edits")
 
@@ -168,10 +168,10 @@ local soon
 for _, v in ipairs(ww.variables) do if v.name == "xuen_soon" then soon = v end end
 Check(soon.expr == "timer.xuen_cd.remains<=10", "timer reference rewritten: " .. soon.expr)
 Check(Store.RenameBlock(ww, "variable", soon, "xuen_is_soon"), "rename variable")
-Check(ww.lists[1].entries[4].when:find("variable.xuen_is_soon", 1, true) ~= nil, "variable reference rewritten")
+Check(ww.groups[1].lists[1].entries[4].when:find("variable.xuen_is_soon", 1, true) ~= nil, "variable reference rewritten")
 Check(Store.RenameBlock(ww, "name", "zenith", "zen"), "rename short name")
 Check(ww.names.zen == 1249625 and ww.names.zenith == nil, "names table updated")
-Check(ww.lists[1].entries[2].spell == "zen" and ww.lists[1].entries[2].when:find("buff.zen.up", 1, true), "entry spell and condition updated")
+Check(ww.groups[1].lists[1].entries[2].spell == "zen" and ww.groups[1].lists[1].entries[2].when:find("buff.zen.up", 1, true), "entry spell and condition updated")
 Check(ww.tts.zen == "Zenith", "tts follows the rename")
 local stillHasStomp = false
 for _, v in ipairs(ww.variables) do if v.expr:find("zenith_stomp_talent", 1, true) then stillHasStomp = true end end
