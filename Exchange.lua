@@ -19,7 +19,7 @@ local _, ns = ...
 --    group.<gkey>.prefix=<1-3 chars>   (made from the name if missing)
 --    list.<key>=<display name>         list.<key>.prefix=ST     list.<key>.group=<gkey>
 --    list.<key>.targets=1 | 2-4 | 5+
---    actions.<key>+=/<spell>[,if=<cond>][,enabled=0][,usable=0]
+--    actions.<key>+=/<spell>[,if=<cond>][,enabled=0][,usable=0][,hold=<N>]
 --  Format 1 had no groups: its lists import as one "Default" group.
 --
 --  Fields split on commas outside parentheses, so max(a,b) stays intact.
@@ -129,6 +129,7 @@ function Exchange.Export(def)
                 if e.when and e.when ~= "" then line = line .. ",if=" .. e.when end
                 if e.enabled == false then line = line .. ",enabled=0" end
                 if e.usable == false then line = line .. ",usable=0" end
+                if e.hold then line = line .. ",hold=" .. e.hold end
                 L(line)
             end
         end
@@ -345,6 +346,9 @@ function Exchange.Import(text)
                     for i = 2, #parts do
                         local k, v = KV(parts[i])
                         if k == "if" then entry.when = v ~= "" and v or nil
+                        elseif k == "hold" then
+                            local num = tonumber(v)
+                            if num then entry.hold = num else Err(n, "hold needs a number") end
                         elseif k == "usable" then
                             if v == "0" then entry.usable = false end
                         elseif k == "enabled" then

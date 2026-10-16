@@ -79,7 +79,7 @@ end
 
 local function UpdateStandaloneText()
     if not _standaloneFS then return end
-    local label, total, pct, mastery, compliant = ns.BuildStatsSummary()
+    local label, total, pct, mastery, compliant, mark = ns.BuildStatsSummary()
     local db = DB()
     -- The percentage reflects the LAST cast's compliance: Fail Color when it
     -- missed, Text Color (Pass Color) otherwise -- including before any cast
@@ -89,7 +89,7 @@ local function UpdateStandaloneText()
     -- Not truncated like the suggestion widget: this string embeds a color
     -- escape code (|cff.../|r) that a naive character-cut could slice
     -- mid-sequence and corrupt. It's short enough in practice not to need it.
-    _standaloneFS:SetText(label .. ": " .. total .. "/" .. ColorHex(color) .. pct .. "%|r/" .. mastery)
+    _standaloneFS:SetText(label .. ": " .. total .. "/" .. mark .. ColorHex(color) .. pct .. "%|r/" .. mastery)
 end
 
 -- Visible while in combat; out of combat it honors Show Out of Combat

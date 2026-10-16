@@ -23,6 +23,8 @@ return function(dir)
         IsShown = function() return false end,
         HasFocus = function() return false end,
         GetParent = function(self) return self._parent end,
+        RegisterEvent = function(self, e) self._events = self._events or {}; self._events[e] = true end,
+        RegisterUnitEvent = function(self, e) self._events = self._events or {}; self._events[e] = true end,
     }
     local function Noop() end
     local FrameMT = { __index = function(_, k)
@@ -39,7 +41,14 @@ return function(dir)
     GetSpecialization = function() return 1 end
     GetSpecializationInfo = function() return 269 end
     InCombatLockdown = function() return true end
-    CreateFrame = function(_, _, parent) return Stub(parent) end
+    -- Every frame is kept so tests can find an event handler by the events
+    -- its frame registered.
+    S.frames = {}
+    CreateFrame = function(_, _, parent)
+        local f = Stub(parent)
+        S.frames[#S.frames + 1] = f
+        return f
+    end
     S.Stub = Stub
     GetSpecializationInfoByID = function(id) if id == 269 then return 269, "Windwalker", "", 0, "DAMAGER", "MONK", "Monk" end end
     UIParent = Stub()

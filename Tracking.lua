@@ -17,8 +17,8 @@ local _trackedSpecID, _trackedRT
 -- be stored/passed through the castGUID-keyed tables below without a second
 -- parallel table.
 local function SnapshotExpected()
-    local spellID, step = ns.EvaluateExpected()
-    return { spellID = spellID, step = step }
+    local spellID, step, _, entry = ns.EvaluateExpected()
+    return { spellID = spellID, step = step, entry = entry }
 end
 
 -- Echo guard state for ReportCast (see comment there). Declared before the
@@ -43,13 +43,18 @@ end
 
 -- Shared by the broker feed and the standalone display: (label, total, pct,
 -- mastery, compliant) where compliant is true/false/nil (nil = no casts yet).
+-- The hold marker before the compliance %: yellow * while a holdable entry
+-- has been ignored 2+ times in a row, green * while a spell is held.
+local HOLD_MARK = { warning = "|cffffd000*|r", held = "|cff40ff40*|r" }
+
 function ns.BuildStatsSummary()
     local total, pct, mastery = ComputeStats()
     local rt = ns.GetActiveAPL()
     local label = rt and ns.Engine.CurrentListName(rt) or "-"
     local lastEntry = _recentReports[#_recentReports]
     local compliant = lastEntry and lastEntry.matched
-    return label, total, pct, mastery, compliant
+    local mark = rt and HOLD_MARK[ns.Engine.HoldState(rt)] or ""
+    return label, total, pct, mastery, compliant, mark
 end
 
 -- Optional LibDataBroker-1.1 feed: a standard, third-party shared library
@@ -69,21 +74,38 @@ local _brokerObj = _ldb and _ldb:NewDataObject("APLforEUI", {
 
 local function UpdateBrokerText()
     if not _brokerObj then return end
-    local label, total, pct, mastery, compliant = ns.BuildStatsSummary()
+    local label, total, pct, mastery, compliant, mark = ns.BuildStatsSummary()
     -- White until the first cast is recorded; green/red by the LAST cast's
     -- compliance after that. Note: EUI's Broker Plugin block strips embedded
     -- color codes unless "Strip Colors" is turned off on that block.
     local colorCode = "|cffffffff"
     if compliant == true then colorCode = "|cff00ff00"
     elseif compliant == false then colorCode = "|cffff0000" end
-    _brokerObj.text = label .. ": " .. total .. "/" .. colorCode .. pct .. "%|r/" .. mastery
+    _brokerObj.text = label .. ": " .. total .. "/" .. mark .. colorCode .. pct .. "%|r/" .. mastery
 end
 
-local function RecordStatsEntry(matched, brokeMastery)
+local function RecordStatsEntry(matched, brokeMastery, expectedSpellID)
     local now = GetTime()
-    _recentReports[#_recentReports + 1] = { time = now, matched = matched, brokeMastery = brokeMastery }
+    _recentReports[#_recentReports + 1] = {
+        time = now, matched = matched, brokeMastery = brokeMastery, expected = expectedSpellID,
+    }
     while _recentReports[1] and (now - _recentReports[1].time) > STATS_WINDOW do
         table.remove(_recentReports, 1)
+    end
+    UpdateBrokerText()
+    ns.UpdateStandaloneText()
+end
+
+-- A cooldown just became held (design.md, phase 6): the n most recent
+-- casts that ignored it were deliberate, so they count as compliant.
+function ns.ForgiveReports(spellID, n)
+    for i = #_recentReports, 1, -1 do
+        if n <= 0 then break end
+        local e = _recentReports[i]
+        if e.expected == spellID and not e.matched then
+            e.matched = true
+            n = n - 1
+        end
     end
     UpdateBrokerText()
     ns.UpdateStandaloneText()
@@ -128,7 +150,14 @@ local function ReportCast(spellID, expected)
     if InCombatLockdown() then
         ns.combatCasts = (ns.combatCasts or 0) + 1
         local matched = not brokeMastery and spellID == expectedSpellID
-        RecordStatsEntry(matched, brokeMastery)
+        RecordStatsEntry(matched, brokeMastery, expectedSpellID)
+        if rt then
+            local heldID, n = ns.Engine.OnCastResult(rt, spellID, expected and expected.entry)
+            if heldID then ns.ForgiveReports(heldID, n) end
+            -- The hold marker may have changed with this cast.
+            UpdateBrokerText()
+            ns.UpdateStandaloneText()
+        end
         if ns.chatOutput then
             local prefix = "APL: " .. BuildStatsPrefix() .. " "
             if brokeMastery then
@@ -337,6 +366,11 @@ combatFrame:SetScript("OnEvent", function(_, event)
         ns.combatStart, ns.combatCasts = GetTime(), 0
     else
         ns.combatStart, ns.combatCasts = nil, nil
+        -- Holds last until the held spell is cast or combat ends.
+        local rt = ns.GetActiveAPL()
+        if rt then ns.Engine.ClearHolds(rt) end
+        UpdateBrokerText()
+        ns.UpdateStandaloneText()
     end
 end)
 

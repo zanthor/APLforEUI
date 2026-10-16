@@ -100,6 +100,7 @@ local function BuildListBody(parent, y, def, list, editable)
         y = Kit.Header(parent, y, {
             depth = 2,
             title = "|cff909090" .. tostring(list.prefix) .. j .. "|r   " .. SpellLabel(def, entry.spell)
+                .. (entry.hold and ("  |cffd0a040[hold " .. entry.hold .. "]|r") or "")
                 .. "   |cff707070" .. Preview(entry.when) .. "|r",
             open = open, editable = editable, index = j, count = count,
             onClick = function() Kit.Toggle(entry) end,
@@ -131,6 +132,28 @@ local function BuildListBody(parent, y, def, list, editable)
                   disabled = ro, disabledTooltip = Kit.READ_ONLY_TIP,
                   getValue = function() return entry.usable ~= false end,
                   setValue = function(v) if v then entry.usable = nil else entry.usable = false end; Store.Changed(def) end })
+            y = y - h
+            _, h = W:DualRow(parent, y,
+                { type = "input", text = "Hold After Ignored Casts", inputWidth = 60, inputStyle = "popup",
+                  placeholder = "Never",
+                  tooltip = "If you cast something else this many times in a row while this entry is the suggestion, its spell counts as held: the entry is skipped and holding / holding.<name> read true, until you cast it or combat ends. Leave empty to never hold.",
+                  disabled = ro, disabledTooltip = Kit.READ_ONLY_TIP,
+                  getValue = function() return entry.hold and tostring(entry.hold) or "" end,
+                  setValue = function(v)
+                      v = v:match("^%s*(.-)%s*$")
+                      if v == "" then
+                          if entry.hold == nil then return end
+                          entry.hold = nil
+                      else
+                          local n = tonumber(v)
+                          if not n or n < 1 or n ~= math.floor(n) then Say("hold must be a whole number of 1 or more.") return end
+                          if n == entry.hold then return end
+                          entry.hold = n
+                      end
+                      Store.Changed(def)
+                      Kit.Rebuild()
+                  end },
+                { type = "spacer" })
             y = y - h
             y = Kit.Condition(parent, y, def, {
                 owner = entry, editable = editable, label = "Condition",

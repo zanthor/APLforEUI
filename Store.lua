@@ -156,7 +156,7 @@ local RESERVED = {
     cooldown = true, charges = true, usable = true, spell = true, buff = true,
     talent = true, override = true, prev = true, channeling = true,
     resource = true, timer = true, counter = true, variable = true,
-    targets = true, bloodlust = true, max = true, min = true,
+    targets = true, bloodlust = true, max = true, min = true, holding = true, combat = true,
 }
 
 -- Resolves typed text (a spell ID, or a name the client knows) to a spell.
@@ -329,7 +329,7 @@ end
 -- Reads whose second segment is a spell short name (buff.<name>.up, ...).
 local SPELL_HEADS = {
     cooldown = true, charges = true, usable = true, spell = true, buff = true,
-    talent = true, override = true, prev = true, channeling = true,
+    talent = true, override = true, prev = true, channeling = true, holding = true,
 }
 
 -- Rewrites references to a renamed building block in every expression,

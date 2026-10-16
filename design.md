@@ -149,7 +149,7 @@ APLforEUIDB.apls[id] = <user APL>;  APLforEUIDB.activeAPL[specID] = id
 4. **Import/Export.** DONE. SimC-style text (format in `Exchange.lua`);
    import always adds a new APL, never replaces one.
 5. **List groups: openers and conditional lists.** DONE. See "Phase 5" below.
-6. **Holding cooldowns.** See "Phase 6" below.
+6. **Holding cooldowns.** DONE. See "Phase 6" below.
 
 ## Phase 5: list groups (openers, burst windows)
 
@@ -208,6 +208,13 @@ notices you skipping one:
   the suggestion, resets it.
 - **Compliance:** the N ignored casts are re-scored as compliant once the
   spell becomes held.
+- **Display:** the compliance % on the status widget and broker gets a
+  prefix: none for 0-1 consecutive ignores, yellow `*` from 2 ignores until
+  held, green `*` while anything is held.
+- **Data:** an entry's `hold = N` (export `,hold=N`); editor field "Hold
+  After Ignored Casts" (empty = never). Only in-combat casts count; the
+  state lives in the APL runtime and resets on leaving combat, on a reload,
+  and when the APL is edited.
 
 ## Editor (phase 3)
 

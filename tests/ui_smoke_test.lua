@@ -242,6 +242,20 @@ Check(entry.enabled == false, "entry switched off from its header toggle")
 onOff.set(true)
 Check(entry.enabled == nil, "entry switched back on")
 
+-- 4a2. Hold After Ignored Casts.
+Build("Lists")
+local holdRow = Row("Hold After Ignored Casts")
+Check(holdRow and holdRow.getValue() == "", "hold empty by default")
+holdRow.setValue("0")
+Check(entry.hold == nil, "hold 0 rejected")
+holdRow.setValue("2.5")
+Check(entry.hold == nil, "fractional hold rejected")
+holdRow.setValue("3")
+Check(entry.hold == 3, "hold set")
+Check(Engine.CheckExpr(def, "holding&!holding.fists_of_fury"), "holding reads compile")
+holdRow.setValue("")
+Check(entry.hold == nil, "hold cleared")
+
 -- 4b. Groups: add one, give it the opener preset, add a list to it.
 wipe(Kit.state.open)
 Build("Lists")

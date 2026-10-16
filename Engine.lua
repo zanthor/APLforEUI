@@ -184,6 +184,20 @@ local function MakeResolver(rt)
                 if v == NIL then return nil end
                 return v
             end
+        elseif head == "holding" then
+            -- design.md, phase 6: holding (anything held) / holding.<name>.
+            if #path == 1 then
+                return function()
+                    for _, h in pairs(rt.holds) do if h.held then return 1 end end
+                    return 0
+                end
+            end
+            Want(path, 2, "holding or holding.<name>")
+            local id = SpellID(a)
+            return function()
+                local h = rt.holds[id]
+                return Bool(h ~= nil and h.held)
+            end
         elseif head == "combat" then
             -- Since entering combat; 0 out of combat, so an opener group
             -- is already showing before the pull.
@@ -281,6 +295,7 @@ function Engine.Compile(def)
         names = def.names or {},
         timers = {}, counters = {}, trackers = {},
         varFns = {}, groups = {}, errors = {}, tts = {},
+        holds = {},  -- [base spellID] = { count = consecutive ignores, held = bool }
         ctx = { vars = {} },
     }
     local options = def.options or {}
@@ -361,6 +376,11 @@ function Engine.Compile(def)
                     -- usable = false opts an entry out of the default
                     -- "only when usable" check (design.md, Entry rules).
                     local entry = { spellID = id, label = label, checkUsable = edef.usable ~= false }
+                    if edef.hold ~= nil then
+                        local n = tonumber(edef.hold)
+                        if n and n >= 1 and n == math.floor(n) then entry.hold = n
+                        else err(where, "hold must be a whole number of 1 or more") end
+                    end
                     local ok = true
                     if edef.when and edef.when ~= "" then
                         local fn, e = Expr.Compile(edef.when, resolve)
@@ -424,8 +444,9 @@ end
 
 -- Groups top to bottom: the first whose condition holds and that has a
 -- list for the target count gets to suggest; if that list has nothing, the
--- next group gets a turn (design.md, phase 5). Returns (spellID, label,
--- listName), or nil when nothing applies.
+-- next group gets a turn (design.md, phase 5). Held entries (phase 6) are
+-- skipped. Returns (spellID, label, listName, entry), or nil when nothing
+-- applies.
 function Engine.Evaluate(rt)
     local ctx = rt.ctx
     wipe(ctx.vars)
@@ -437,11 +458,13 @@ function Engine.Evaluate(rt)
             if list then
                 for _, entry in ipairs(list.entries) do
                     local sid = ResolveOverride(entry.spellID)
-                    if not (rt.noRepeat and sid == last) and Ready(sid)
+                    local hold = rt.holds[entry.spellID]
+                    if not (hold and hold.held)
+                        and not (rt.noRepeat and sid == last) and Ready(sid)
                         and (not entry.checkUsable or Usable(sid) ~= 0)
                         and (not entry.when or Truthy(entry.when(ctx))) then
                         rt.lastListName = list.name
-                        return sid, entry.label, list.name
+                        return sid, entry.label, list.name, entry
                     end
                 end
             end
@@ -547,6 +570,58 @@ function Engine.Reset(rt)
         if tracker.kind == "timer" then tracker.state.expiresAt = nil
         else tracker.state.value = tracker.initial end
     end
+    wipe(rt.holds)
+end
+
+-------------------------------------------------------------------------------
+--  Holding cooldowns (design.md, phase 6). Called for every in-combat cast
+--  with the entry that was the suggestion when it was cast. Ignoring a
+--  holdable entry N times in a row marks its spell held (its entry is then
+--  skipped); casting the spell, or a cast while it wasn't the suggestion,
+--  resets the count. Returns (resolved spellID, N) on the cast that makes a
+--  spell held, so Tracking can forgive those N casts in the stats.
+-------------------------------------------------------------------------------
+local function IsCastOf(castID, baseID)
+    return castID == baseID or castID == ResolveOverride(baseID)
+end
+
+function Engine.OnCastResult(rt, castID, entry)
+    local holds = rt.holds
+    local suggested = entry and entry.spellID
+    for id, h in pairs(holds) do
+        if IsCastOf(castID, id) then
+            holds[id] = nil
+        elseif not h.held and id ~= suggested then
+            h.count = 0
+        end
+    end
+    if not (entry and entry.hold) or IsCastOf(castID, suggested) then return nil end
+    local h = holds[suggested]
+    if not h then
+        h = { count = 0, held = false }
+        holds[suggested] = h
+    end
+    if h.held then return nil end
+    h.count = h.count + 1
+    if h.count < entry.hold then return nil end
+    h.held = true
+    return ResolveOverride(suggested), h.count
+end
+
+-- For the stats display: "held" when any spell is held, "warning" when a
+-- holdable entry has been ignored 2+ times in a row, else nil.
+function Engine.HoldState(rt)
+    local state
+    for _, h in pairs(rt.holds) do
+        if h.held then return "held" end
+        if h.count >= 2 then state = "warning" end
+    end
+    return state
+end
+
+-- Combat ended: every hold and count starts over.
+function Engine.ClearHolds(rt)
+    wipe(rt.holds)
 end
 
 -- Runs an expression against a runtime's current state (for /apl expr).

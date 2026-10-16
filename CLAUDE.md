@@ -23,6 +23,7 @@ EllesmereUI Cooldown Manager (`OptionalDeps`), so it must also work without them
   `tests/editor_logic_test.lua .` (formatter, builder forms, store),
   `tests/exchange_test.lua .` (import/export round trip and errors),
   `tests/groups_test.lua .` (list groups: priority, fall-through, openers),
+  `tests/holds_test.lua .` (holding cooldowns through Tracking's events),
   `tests/ui_smoke_test.lua .` (every editor page against a recording mock
   EllesmereUI, driven like a user; catches errors, not layout) and
   `tests/parity_sim.lua .` (frozen `tests/legacy_Monk_Windwalker.lua` vs the

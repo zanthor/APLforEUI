@@ -43,6 +43,8 @@ local CATEGORIES = {
     { key = "timer_remains", label = "Timer remaining", tpl = "timer.%s.remains", source = "timers", numeric = true },
     { key = "counter", label = "Counter", tpl = "counter.%s", source = "counters", numeric = true },
     { key = "variable", label = "Variable", tpl = "variable.%s", source = "variables", optionalOp = true },
+    { key = "holding_any", label = "Holding a cooldown", tpl = "holding" },
+    { key = "holding", label = "Holding spell", tpl = "holding.%s", source = "names" },
     { key = "combat_time", label = "Combat time", tpl = "combat.time", numeric = true },
     { key = "combat_casts", label = "Casts this combat", tpl = "combat.casts", numeric = true },
     { key = "targets", label = "Targets", tpl = "targets", numeric = true },

@@ -89,7 +89,7 @@ local edge = {
         { name = "Burst, = hot", prefix = "BU", when = "!timer.t.up|combat.casts<3", lists = {
             { name = "Single Target", prefix = "S", min = 1, max = 1, entries = {
                 { spell = "a" },
-                { spell = "b_2", when = "variable.v&prev.a", enabled = false, usable = false },
+                { spell = "b_2", when = "variable.v&prev.a|holding.a", enabled = false, usable = false, hold = 3 },
             } },
         } },
         { name = "Default", prefix = "DF", lists = {
@@ -113,6 +113,7 @@ if back then
     Check(g1.prefix == "BU" and g2.prefix == "DF", "group prefixes kept")
     Check(g1.lists[1].entries[2].enabled == false and g1.lists[1].entries[1].enabled == nil, "enabled flags")
     Check(g1.lists[1].entries[2].usable == false and g1.lists[1].entries[1].usable == nil, "usable opt-out kept")
+    Check(g1.lists[1].entries[2].hold == 3 and g1.lists[1].entries[1].hold == nil, "hold kept")
     Check(back.counters[1].min == -1 and back.counters[1].max == nil, "counter limits")
     Check(g2.lists[2].min == 5 and g2.lists[2].max == nil, "open-ended range")
     Check(g2.lists[1].min == 2 and g2.lists[1].max == 4, "bounded range")
