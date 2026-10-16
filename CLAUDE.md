@@ -6,17 +6,17 @@ hard-coded Windwalker Monk APL to user-editable APLs for any spec (plan:
 `design.md`). Optional integration with EllesmereUI and the
 EllesmereUI Cooldown Manager (`OptionalDeps`), so it must also work without them.
 
-- Code (TOC load order): `Core.lua` (shared helpers, legacy
-  `ns.RegisterSpec` registry, `ns.slashCommands`), `Expression.lua`
-  (SimC-style parser/compiler), `Engine.lua` (data APL runtime: timers,
-  counters, variables, lists; APL selection; parity mode), `Defaults/*.lua`
-  (built-in APLs as data), `Specs/*.lua` (legacy Lua APLs, deleted once
-  parity is proven), `Tracking.lua` (cast events, stats, broker),
+- Code (TOC load order): `Core.lua` (shared helpers, `ns.slashCommands`),
+  `Expression.lua` (SimC-style parser/compiler), `Engine.lua` (data APL
+  runtime: timers, counters, variables, lists; APL selection),
+  `Defaults/*.lua` (built-in APLs as data; no per-spec Lua),
+  `Tracking.lua` (cast events, stats, broker),
   `Widgets.lua`, `Glow.lua`, `Options.lua` (EUI plugin pages), `Slash.lua`.
   Files share state through `ns`, never globals.
 - Tests (offline, plain Lua 5.1 with mocked WoW API; `lua.exe` sits next to
   `luac.exe`): `tests/expr_test.lua .` (parser) and `tests/parity_sim.lua .`
-  (legacy vs data APL; `EAGER=1` must give 0 mismatches). Not deployed.
+  (frozen `tests/legacy_Monk_Windwalker.lua` vs the data APL; `EAGER=1`
+  must give 0 mismatches). Not deployed.
 - Design notes: `design.md` (configurable APL plan), `monkapl.md` (the
   Windwalker APL), `predictive.md` (benched +1 forecaster data). Do not guess spell data; ask the user or
   leave it marked missing.

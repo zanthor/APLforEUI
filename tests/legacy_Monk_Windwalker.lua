@@ -1,5 +1,9 @@
 local _, ns = ...
 
+-- FROZEN reference copy of the original hard-coded Windwalker APL, kept only
+-- so tests/parity_sim.lua can check Defaults/Monk_Windwalker.lua against it.
+-- Not loaded by the addon. Do not edit except to keep the harness running.
+
 -------------------------------------------------------------------------------
 --  Windwalker Monk spec module: the simplified test APL (NOT a real rotation)
 --  and every self-tracked clock it depends on. Design notes: monkapl.md.

@@ -10,7 +10,6 @@ Core.lua
 Expression.lua
 Engine.lua
 Defaults\Monk_Windwalker.lua
-Specs\Monk_Windwalker.lua
 Tracking.lua
 Widgets.lua
 Glow.lua

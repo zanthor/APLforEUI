@@ -14,7 +14,7 @@ class/spec, edited in game inside the EllesmereUI plugin section.
 | Conditions | Both a point-and-click builder and a SimC-style text expression (`chi>=3&!buff.zenith.up`). Both edit the same stored condition. |
 | Openers | Separate lists that start on entering combat and run for X actions or X seconds. **Later phase.** |
 | Combo Strikes | Generic APL option "never suggest the last cast"; only the Windwalker APL turns it on. |
-| Spec support | A spec is "supported" when we ship a default APL for it. Monk first; other classes after Monk is done. No Lua per spec: everything is configuration (below). The Lua spec registry stays only as a fallback for anything that truly cannot be modelled, and is expected to stay empty. |
+| Spec support | A spec is "supported" when we ship a default APL for it. Monk first; other classes after Monk is done. No Lua per spec: everything is configuration (below). The Lua spec registry was removed once Windwalker reached parity; re-add a hook only if something truly cannot be modelled. |
 | Shipped defaults | Default APLs, plus a library of ready-made timers, counters and variables (as we sort them out) that the editor copies into an APL. Copies, not references, so an APL stays self-contained. |
 | Import/Export | Wanted. Format still open (see Open items). |
 | Saved data | Per account (`APLforEUIDB`). |
@@ -96,7 +96,7 @@ on), and its condition is true. The suggestion is the resolved spell.
 | Zenith buff 20s | Timer `zenith`: cast Zenith, or Stomp ID when `!timer.zenith.up \| timer.zenith.remains<=2`: `set 20` |
 | Stomp charges | Counter `stomp` (0-2): Zenith build `set 2`; Stomp ID when `timer.zenith.remains>2`: `sub 1` |
 | Proc expiry | Timer per proc: `aura_present` `start 13`, `aura_absent` `clear`, consuming cast `clear` |
-| Fists cost | `variable.fof_cost = max(1,3-buff.zenith.up-talent.harmonic_combo)` (or `usable.fists_of_fury` once confirmed) |
+| Fists cost | `usable.fists_of_fury` (matched the hand-written cost rule in both directions in game) |
 | Combo Strikes | APL option |
 
 ## Data model
@@ -107,6 +107,7 @@ on), and its condition is true. The suggestion is the resolved spell.
     specID = 269, builtin = true,             -- read-only; duplicate to edit
     options = { noRepeatLastCast = true, rangeSpell = "tiger_palm" },
     names = { tiger_palm = 100780, fists_of_fury = 113656, ... },
+    tts = { fists_of_fury = "Fists", ... },   -- spoken by the Suggestion Widget
     variables = { { name = "fof_cost", expr = "max(1,3-buff.zenith.up-talent.harmonic_combo)" }, ... },
     timers = { { name = "xuen", triggers = {
         { on = "cast", spell = "invoke_xuen", when = "talent.xuens_bond", action = "set", value = "90" }, ... } } },
@@ -130,11 +131,11 @@ APLforEUIDB.apls[id] = <user APL>;  APLforEUIDB.activeAPL[specID] = id
 ## Phases
 
 1. **Restructure.** DONE.
-2. **Engine.** Expression parser/compiler, timers/counters/variables,
-   data-driven evaluator, Windwalker as a built-in data APL. Parity mode:
-   the old Lua APL keeps driving while the data APL runs alongside and
-   logs every disagreement (`/apl parity`); `/apl engine new` switches
-   which one drives. Once parity is clean, delete `Specs/Monk_Windwalker.lua`.
+2. **Engine.** DONE. Expression parser/compiler, timers/counters/
+   variables, data-driven evaluator, Windwalker as a built-in data APL.
+   Parity confirmed offline and in game; the Lua version now lives only in
+   `tests/` as the parity reference. Status widget shows the running
+   list's name.
 3. **Editor UI.** APL list (create/duplicate/rename/delete/set active), list
    editor with target ranges, entry editor with condition builder and text
    expression, names/timers/counters/variables editors, shipped library.

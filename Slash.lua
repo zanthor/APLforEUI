@@ -6,8 +6,8 @@ end
 
 -- TEMP DEBUG: per-nameplate dump, remove once target count is confirmed fixed.
 ns.slashCommands.melee = function()
-    local apl, spec = ns.GetActiveAPL(), ns.GetActiveSpec()
-    local rangeSpellID = (apl and apl.rangeSpellID) or (spec and spec.rangeSpellID)
+    local apl = ns.GetActiveAPL()
+    local rangeSpellID = apl and apl.rangeSpellID
     if not rangeSpellID then
         print("APL debug: current spec is not supported.")
         return

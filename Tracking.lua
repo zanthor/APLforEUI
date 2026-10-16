@@ -2,7 +2,7 @@ local _, ns = ...
 
 -------------------------------------------------------------------------------
 --  Cast tracking and compliance stats. Reports EVERY successful player cast
---  against the active spec's current top pick. Event handling mirrors
+--  against the active APL's current top pick. Event handling mirrors
 --  EllesmereUIDamageMeters_SpellHistory.lua (EUI's own cast tracker, already
 --  proven accurate) instead of reinventing it.
 -------------------------------------------------------------------------------
@@ -10,9 +10,8 @@ local ResolveOverride = ns.ResolveOverride
 local SpellName = ns.SpellName
 local SpellResolvable = ns.SpellResolvable
 
--- Spec module and specID that were active when tracking started; legacy
--- hooks go to that module, not to whatever GetActiveSpec() says mid-event.
-local _trackedSpec, _trackedSpecID, _trackedRT
+-- specID and APL runtime that were active when tracking started.
+local _trackedSpecID, _trackedRT
 
 -- EvaluateExpected returns (spellID, step); wrap both into one value so it can
 -- be stored/passed through the castGUID-keyed tables below without a second
@@ -46,7 +45,8 @@ end
 -- mastery, compliant) where compliant is true/false/nil (nil = no casts yet).
 function ns.BuildStatsSummary()
     local total, pct, mastery = ComputeStats()
-    local label = ns.GetTargetCount() > 1 and "AOE" or "ST"
+    local rt = ns.GetActiveAPL()
+    local label = rt and ns.Engine.CurrentListName(rt) or "-"
     local lastEntry = _recentReports[#_recentReports]
     local compliant = lastEntry and lastEntry.matched
     return label, total, pct, mastery, compliant
@@ -110,8 +110,6 @@ local function ReportCast(spellID, expected)
     _lastReportedSpellID, _lastReportedTime = spellID, GetTime()
     ns.OnCastSuppressSuggest(_lastReportedTime)
 
-    local spec = _trackedSpec
-    if spec and spec.OnCast then spec.OnCast(spellID) end
     local rt = ns.GetActiveAPL()
     if rt then ns.Engine.OnCast(rt, spellID) end
 
@@ -130,10 +128,8 @@ local function ReportCast(spellID, expected)
     if InCombatLockdown() then
         local matched = not brokeMastery and spellID == expectedSpellID
         RecordStatsEntry(matched, brokeMastery)
-        if spec and spec.OnCombatCast then spec.OnCombatCast(spellID) end
         if ns.chatOutput then
-            local debugPrefix = spec and spec.DebugPrefix and spec.DebugPrefix() or ""
-            local prefix = "APL: " .. BuildStatsPrefix() .. " " .. debugPrefix .. " "
+            local prefix = "APL: " .. BuildStatsPrefix() .. " "
             if brokeMastery then
                 print(prefix .. SpellName(spellID) .. " (Broke Mastery)")
             elseif spellID == expectedSpellID then
@@ -173,7 +169,6 @@ local function OnEvent(_, event, unit, ...)
     if unit ~= "player" then return end
 
     if event == "UNIT_AURA" then
-        if _trackedSpec and _trackedSpec.OnAura then _trackedSpec.OnAura(...) end
         local rt = ns.GetActiveAPL()
         if rt then ns.Engine.OnAura(rt) end
         return
@@ -301,7 +296,6 @@ function ns.IsTracking() return active end
 function ns.StartTracking()
     if active then return end
     active = true
-    _trackedSpec = ns.GetActiveSpec()
     _trackedSpecID = ns.GetSpecID()
     _trackedRT = ns.GetActiveAPL()
     eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
@@ -328,9 +322,8 @@ function ns.StopTracking()
     ns.UpdateStandaloneText()
     _lastReportedSpellID, _lastReportedTime = nil, 0
     ns.lastCastSpellID = nil
-    if _trackedSpec and _trackedSpec.OnReset then _trackedSpec.OnReset() end
     if _trackedRT then ns.Engine.Reset(_trackedRT) end
-    _trackedSpec, _trackedSpecID, _trackedRT = nil, nil, nil
+    _trackedSpecID, _trackedRT = nil, nil
 end
 
 local specFrame = CreateFrame("Frame")
@@ -343,8 +336,7 @@ specFrame:SetScript("OnEvent", function(_, event, unit)
         ns.ApplySuggest()
     end
     -- Only restart on a real spec change (this event also fires on talent
-    -- swaps), so a switch between two supported specs never carries one
-    -- spec's hooks into the other.
+    -- swaps), so one spec's tracked state never carries into another.
     local specID = ns.GetSpecID()
     if specID ~= _trackedSpecID or not active then
         ns.StopTracking()

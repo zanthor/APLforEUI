@@ -4,7 +4,8 @@ local _, ns = ...
 --  Data-driven APL engine: compiles an APL definition (Defaults/*.lua or
 --  saved variables) into a runtime with timers, counters, variables and
 --  priority lists, then evaluates it. See design.md "Conditions: building
---  blocks" for the vocabulary.
+--  blocks" for the vocabulary. tests/ covers the parser and checks the
+--  built-in Windwalker APL against its original Lua version.
 -------------------------------------------------------------------------------
 local Expr = ns.Expr
 local Truthy = Expr.Truthy
@@ -269,7 +270,7 @@ function Engine.Compile(def)
         def = def, name = def.name, specID = def.specID,
         names = def.names or {},
         timers = {}, counters = {}, trackers = {},
-        varFns = {}, lists = {}, errors = {},
+        varFns = {}, lists = {}, errors = {}, tts = {},
         ctx = { vars = {} },
     }
     local options = def.options or {}
@@ -278,6 +279,12 @@ function Engine.Compile(def)
 
     local function err(where, msg) rt.errors[#rt.errors + 1] = where .. ": " .. tostring(msg) end
     local resolve = MakeResolver(rt)
+
+    -- Keyed by spell ID so the widget can look up whatever it is showing.
+    for name, text in pairs(def.tts or {}) do
+        local id = rt.names[name]
+        if id then rt.tts[id] = text else err("tts", "unknown name '" .. name .. "'") end
+    end
 
     -- Trackers first (state tables must exist before anything references
     -- them), then their triggers, which may read any tracker or variable.
@@ -337,6 +344,12 @@ local function PickList(rt, targets)
         if n >= list.min and (not list.max or n <= list.max) then return list end
     end
     return nil
+end
+
+-- Name of the list the current target count selects, or nil for none.
+function Engine.CurrentListName(rt)
+    local list = PickList(rt, ns.GetTargetCount(rt.rangeSpellID))
+    return list and list.name
 end
 
 -- Returns (spellID, label, listName), or nil when nothing applies.
@@ -496,70 +509,10 @@ function ns.GetActiveAPL()
     return rt
 end
 
--------------------------------------------------------------------------------
---  Suggestion entry point, plus parity mode: while a Lua spec module still
---  exists for the spec, it drives suggestions unless /apl engine new is set,
---  and the data APL runs alongside so every disagreement is logged.
--------------------------------------------------------------------------------
-local _parity = { samples = 0, mismatches = 0, byKey = {} }
-
-local function RecordParity(oldID, oldStep, newID, newLabel)
-    _parity.samples = _parity.samples + 1
-    local a = oldID and ResolveOverride(oldID)
-    if a == newID then return end
-    _parity.mismatches = _parity.mismatches + 1
-    local key = "old " .. tostring(oldStep) .. " " .. (a and ns.SpellName(a) or "none")
-        .. "  /  new " .. tostring(newLabel) .. " " .. (newID and ns.SpellName(newID) or "none")
-    _parity.byKey[key] = (_parity.byKey[key] or 0) + 1
-end
-
-local function UseNewEngine()
-    return ns.DB().engine == "new"
-end
-
 function ns.EvaluateExpected()
-    local spec = ns.GetActiveSpec()
     local rt = ns.GetActiveAPL()
-    if not spec or UseNewEngine() then
-        if rt then return Engine.Evaluate(rt) end
-        return nil
-    end
-    local sid, step = spec.Evaluate()
-    if rt and InCombatLockdown() then
-        local nid, nlabel = Engine.Evaluate(rt)
-        RecordParity(sid, step, nid, nlabel)
-    end
-    return sid, step
-end
-
-ns.slashCommands.engine = function(rest)
-    rest = rest:lower()
-    if rest == "new" or rest == "old" then
-        ns.DB().engine = rest == "new" and "new" or nil
-    end
-    print("APL for EUI: suggestions come from the " .. (UseNewEngine() and "new data APL" or "old Lua APL")
-        .. " (/apl engine new|old).")
-end
-
-ns.slashCommands.parity = function(rest)
-    if rest:lower() == "reset" then
-        _parity.samples, _parity.mismatches = 0, 0
-        wipe(_parity.byKey)
-        print("APL parity: reset.")
-        return
-    end
-    if UseNewEngine() then
-        print("APL parity: only recorded while the old engine drives (/apl engine old).")
-    end
-    local pct = _parity.samples > 0 and (_parity.mismatches / _parity.samples * 100) or 0
-    print(string.format("APL parity: %d in-combat samples, %d mismatches (%.1f%%).",
-        _parity.samples, _parity.mismatches, pct))
-    local keys = {}
-    for key in pairs(_parity.byKey) do keys[#keys + 1] = key end
-    table.sort(keys, function(x, y) return _parity.byKey[x] > _parity.byKey[y] end)
-    for i = 1, math.min(10, #keys) do
-        print("  " .. _parity.byKey[keys[i]] .. "x  " .. keys[i])
-    end
+    if not rt then return nil end
+    return Engine.Evaluate(rt)
 end
 
 ns.slashCommands.expr = function(rest)

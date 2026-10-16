@@ -310,7 +310,6 @@ local function UpdateSuggestWidget()
         end
         return
     end
-    local spec = ns.GetActiveSpec()
     if spellID == _lastSuggestedSpellID and step == _lastSuggestedStep then return end
     _lastSuggestedSpellID, _lastSuggestedStep = spellID, step
     _suggestSuppressUntil = GetTime() + GetSuggestGlobalSuppression()
@@ -319,7 +318,8 @@ local function UpdateSuggestWidget()
     local info = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
     _suggestIcon:SetTexture(info and info.iconID)
     if DB().suggestTTSEnabled then
-        local alias = spec and spec.ttsAlias and spec.ttsAlias[spellID]
+        local rt = ns.GetActiveAPL()
+        local alias = rt and rt.tts[spellID]
         if alias then SpeakAlertText(alias) end
     end
     local stepKey = NormalizeStepKey(step)

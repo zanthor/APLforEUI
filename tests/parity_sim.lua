@@ -1,6 +1,6 @@
 -- Offline parity harness: mocks the WoW API, loads the addon in TOC order,
--- and compares the legacy Lua APL (Specs/) against the data APL (Defaults/)
--- on random states and cast sequences.
+-- and compares the frozen legacy Lua APL (tests/legacy_Monk_Windwalker.lua)
+-- against the data APL (Defaults/) on random states and cast sequences.
 -- usage: lua tests/parity_sim.lua <addonDir> [runs] [steps] [seed]
 -- env:   EAGER=1  start the legacy proc clocks every step, removing its one
 --                 known quirk (lazy start); expect 0 mismatches with it.
@@ -45,7 +45,16 @@ C_Spell = {
         return { isActive = S.cd[id] == true, isOnGCD = false }
     end,
     IsSpellInRange = function() return true end,
-    IsSpellUsable = function() return true, false end,
+    -- Fists of Fury: the real rule the legacy code hard-codes (base 3 Chi,
+    -- -1 during Zenith, -1 with Harmonic Combo, floor 1); verified in game
+    -- to match IsSpellUsable in both directions.
+    IsSpellUsable = function(id)
+        if id == 113656 then
+            local cost = 3 - (S.buffs[1249625] and 1 or 0) - (S.talents[1250041] and 1 or 0)
+            return S.chi >= math.max(1, cost), false
+        end
+        return true, false
+    end,
 }
 C_SpellBook = { IsSpellKnown = function(id) return S.talents[id] == true end }
 C_UnitAuras = {
@@ -86,9 +95,11 @@ for line in io.lines(dir .. "/APLforEUI.toc") do
         f("APLforEUI", ns)
     end
 end
+local spec
+ns.RegisterSpec = function(s) spec = s end
+assert(loadfile(dir .. "/tests/legacy_Monk_Windwalker.lua"))("APLforEUI", ns)
 for _, p in ipairs(printed) do print_real("addon printed: " .. p) end
 
-local spec = ns.GetActiveSpec()
 local rt = ns.GetActiveAPL()
 assert(spec and rt, "spec or apl missing")
 assert(#rt.errors == 0, "compile errors")
@@ -110,7 +121,7 @@ local function R(p) return math.random() < p end
 
 for run = 1, RUNS do
     -- fresh session
-    ns.StopTracking(); ns.StartTracking()
+    ns.StopTracking(); ns.StartTracking(); spec.OnReset()
     -- Same known start for both engines: the old one never resets its
     -- Zenith/Stomp/Xuen clocks, so cast both, then let everything expire.
     for _, c in ipairs({ T.zenith, T.xuen }) do spec.OnCast(c); ns.Engine.OnCast(rt, c) end

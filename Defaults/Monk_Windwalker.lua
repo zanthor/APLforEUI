@@ -1,9 +1,9 @@
 local _, ns = ...
 
 -------------------------------------------------------------------------------
---  Built-in Windwalker APL: the same simplified test APL as monkapl.md (and,
---  until parity is proven, Specs/Monk_Windwalker.lua), expressed as data.
---  Labels match monkapl.md's step numbers; "A" prefixes the AOE list.
+--  Built-in Windwalker APL: the simplified test APL from monkapl.md as
+--  data. Labels match monkapl.md's step numbers; "A" prefixes the AOE list.
+--  tests/parity_sim.lua checks it against the original Lua version.
 -------------------------------------------------------------------------------
 
 -- Zenith and Zenith Stomp share one button: once talented into Stomp every
@@ -39,15 +39,27 @@ ns.RegisterBuiltinAPL({
         dance_of_chi_ji = 325202,
         unbroken_rhythm = 1297033,
         obsidian_spiral = 1249832,
-        harmonic_combo = 1250041,
         shadowboxing_treads = 392982,
         restore_balance = 442719,       -- Invoke Xuen: 2 min cooldown
         xuens_bond = 292986,            -- Invoke Xuen: 90 sec cooldown
     },
 
+    -- Spoken by the Suggestion Widget's TTS; names without an entry stay silent.
+    tts = {
+        tiger_palm = "Palm",
+        fists_of_fury = "Fists",
+        invoke_xuen = "Xeun",
+        celestial_conduit = "Conduit",
+        blackout_kick = "Kick",
+        spinning_crane_kick = "Spin",
+        rising_sun_kick = "Sun",
+        rushing_wind_kick = "Wind",
+        whirling_dragon_punch = "Dragon",
+        zenith = "Zenith",
+        zenith_stomp = "Stomp",
+    },
+
     variables = {
-        -- Base 3 Chi, -1 during Zenith, -1 with Harmonic Combo, floor 1.
-        { name = "fof_cost", expr = "max(1,3-buff.zenith.up-talent.harmonic_combo)" },
         -- Unknown (Xuen never seen cast) counts as not soon.
         { name = "xuen_soon", expr = "timer.xuen.remains<=10" },
         -- Spend from 2 Zenith charges freely; from 1 only if a full recharge
@@ -121,14 +133,14 @@ ns.RegisterBuiltinAPL({
         { name = "ST", min = 1, max = 1, entries = {
             { label = "O1", spell = "invoke_xuen", when = "override.invoke_xuen=invoke_xuen" },
             { label = "O2", spell = "zenith", when = "!buff.zenith.up&variable.safe_zenith" },
-            { label = "1", spell = "fists_of_fury", when = "variable.hotjs_ending&resource.chi>=variable.fof_cost" },
+            { label = "1", spell = "fists_of_fury", when = "variable.hotjs_ending&usable.fists_of_fury" },
             { label = "2", spell = "whirling_dragon_punch", when = "!buff.hotjs.up&variable.wdp_usable&!variable.xuen_soon" },
             { label = "3", spell = "strike_of_the_windlord", when = "!buff.hotjs.up&talent.strike_of_the_windlord&!variable.xuen_soon" },
             { label = "4", spell = "celestial_conduit", when = "!buff.hotjs.up&override.invoke_xuen=celestial_conduit" },
             { label = "6", spell = "zenith_stomp", when = "buff.zenith.up&variable.stomp_ready&(resource.chi<=4|variable.zenith_almost_over|channeling.celestial_conduit)" },
             { label = "7", spell = "tiger_palm", when = "!buff.zenith.up&bloodlust&resource.chi<=4" },
-            { label = "8", spell = "tiger_palm", when = "resource.chi<variable.fof_cost" },
-            { label = "9", spell = "fists_of_fury", when = "resource.chi>=variable.fof_cost" },
+            { label = "8", spell = "tiger_palm", when = "!usable.fists_of_fury" },
+            { label = "9", spell = "fists_of_fury", when = "usable.fists_of_fury" },
             { label = "10", spell = "rising_sun_kick", when = "override.rising_sun_kick=rushing_wind_kick" },
             { label = "11", spell = "blackout_kick", when = "variable.cb_dump" },
             { label = "12", spell = "spinning_crane_kick", when = "variable.dcj_dump" },
@@ -145,13 +157,13 @@ ns.RegisterBuiltinAPL({
         { name = "AOE", min = 2, entries = {
             { label = "O1", spell = "invoke_xuen", when = "override.invoke_xuen=invoke_xuen" },
             { label = "O2", spell = "zenith", when = "!buff.zenith.up&variable.safe_zenith" },
-            { label = "A1", spell = "fists_of_fury", when = "variable.hotjs_ending&resource.chi>=variable.fof_cost" },
+            { label = "A1", spell = "fists_of_fury", when = "variable.hotjs_ending&usable.fists_of_fury" },
             { label = "A2", spell = "whirling_dragon_punch", when = "!buff.hotjs.up&variable.wdp_usable&!variable.xuen_soon" },
             { label = "A3", spell = "strike_of_the_windlord", when = "!buff.hotjs.up&talent.strike_of_the_windlord&!variable.xuen_soon" },
             { label = "A4", spell = "celestial_conduit", when = "!buff.hotjs.up&override.invoke_xuen=celestial_conduit" },
             { label = "A6", spell = "zenith_stomp", when = "buff.zenith.up&variable.stomp_ready&(resource.chi<=4|variable.zenith_almost_over|channeling.celestial_conduit)" },
-            { label = "A7", spell = "tiger_palm", when = "resource.chi<variable.fof_cost" },
-            { label = "A8", spell = "fists_of_fury", when = "resource.chi>=variable.fof_cost" },
+            { label = "A7", spell = "tiger_palm", when = "!usable.fists_of_fury" },
+            { label = "A8", spell = "fists_of_fury", when = "usable.fists_of_fury" },
             { label = "A9", spell = "spinning_crane_kick", when = "buff.unbroken_rhythm.up" },
             { label = "A10", spell = "rising_sun_kick", when = "!cooldown.fists_of_fury.ready" },
             { label = "A11", spell = "rising_sun_kick", when = "override.rising_sun_kick=rushing_wind_kick&!buff.unbroken_rhythm.up" },

@@ -1,9 +1,8 @@
 local _, ns = ...
 
 -------------------------------------------------------------------------------
---  Shared helpers and the spec registry. Spec modules (Specs/*.lua) register
---  themselves here; everything else asks for the active spec instead of
---  checking for one class/spec directly.
+--  Shared helpers. Nothing here or elsewhere checks for a class/spec
+--  directly: everything asks for the active APL (Engine.lua).
 -------------------------------------------------------------------------------
 
 APLforEUIDB = APLforEUIDB or {}
@@ -27,38 +26,14 @@ function ns.IsChanneling(spellID) return ns.currentChannelSpellID == spellID end
 -- /apl <cmd> handlers, registered by whichever file owns the state they read.
 ns.slashCommands = {}
 
--------------------------------------------------------------------------------
---  Spec registry. A spec table provides:
---  Legacy: being replaced by data APLs (Engine.lua, Defaults/*.lua).
---    specID, rangeSpellID          (target counting)
---    Evaluate() -> spellID, step
---    OnCast(spellID)               every reported cast, in or out of combat
---    OnCombatCast(spellID)         reported casts in combat only (optional)
---    OnAura(updateInfo)            player UNIT_AURA (optional)
---    OnReset()                     tracking stopped (optional)
---    DebugPrefix() -> string       chat debug line (optional)
---    ttsAlias = { [spellID] = "short name" }
--------------------------------------------------------------------------------
-ns.specs = {}
-
-function ns.RegisterSpec(spec)
-    ns.specs[spec.specID] = spec
-end
-
 function ns.GetSpecID()
     local spec = GetSpecialization and GetSpecialization()
     return spec and GetSpecializationInfo(spec) or nil
 end
 
-function ns.GetActiveSpec()
-    local specID = ns.GetSpecID()
-    return specID and ns.specs[specID] or nil
-end
-
--- True when the current spec has anything to suggest: a data APL
--- (Engine.lua) or a legacy Lua spec module.
+-- True when the current spec has an APL to run (Engine.lua).
 function ns.IsSpecSupported()
-    return ns.GetActiveAPL() ~= nil or ns.GetActiveSpec() ~= nil
+    return ns.GetActiveAPL() ~= nil
 end
 
 -------------------------------------------------------------------------------
@@ -112,14 +87,13 @@ end
 
 -- No direct "enemies in range" API exists, so this infers it the same way
 -- EUI's own EllesmereUI_Range.lua does for single-target range: per-nameplate
--- IsSpellInRange against a range spell (the APL's, else the spec
--- module's), counted up. Plain booleans the whole way, never secret.
+-- IsSpellInRange against a range spell (default: the active APL's),
+-- counted up. Plain booleans the whole way, never secret.
 function ns.GetTargetCount(rangeSpellID)
     local count = 0
     if not rangeSpellID then
-        local apl = ns.GetActiveAPL and ns.GetActiveAPL()
-        local spec = ns.GetActiveSpec()
-        rangeSpellID = (apl and apl.rangeSpellID) or (spec and spec.rangeSpellID)
+        local apl = ns.GetActiveAPL()
+        rangeSpellID = apl and apl.rangeSpellID
     end
     if not rangeSpellID then return count end
     local plates = C_NamePlate and C_NamePlate.GetNamePlates and C_NamePlate.GetNamePlates(issecure())
