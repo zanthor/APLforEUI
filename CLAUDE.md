@@ -36,6 +36,7 @@ EllesmereUI Cooldown Manager (`OptionalDeps`), so it must also work without them
   `tests/glow_test.lua .` (CDM glow and its settings page),
   `tests/harvest_test.lua .` (data harvesting and the Discovered section),
   `tests/bm_test.lua .` (built-in Beast Mastery APL against the guide),
+  `tests/shadow_test.lua .` (built-in Shadow Priest Archon APL against the guide),
   `tests/ui_smoke_test.lua .` (every editor page against a recording mock
   EllesmereUI, driven like a user; catches errors, not layout) and
   `tests/parity_sim.lua .` (frozen `tests/legacy_Monk_Windwalker.lua` vs the

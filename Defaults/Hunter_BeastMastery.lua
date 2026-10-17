@@ -15,6 +15,9 @@ local _, ns = ...
 --      2-piece) one Barbed Shot gives all 4 stacks and Cobra Shot spends them
 --      all, so "up" means "at max". Without the tier set it never appears.
 --      With fewer Stomps per Barbed Shot this would fire before max.
+--  Bestial Wrath is holdable (hold 3, every line): ignored 3 times in a
+--  row, or skipped twice for the offered next action, it's held for a burst
+--  window.
 --  Buffs used here must be tracked in the Cooldown Manager to be readable in
 --  combat: Howl of the Pack Leader, Nature's Ally, Beast Cleave, Cobra Fang.
 -------------------------------------------------------------------------------
@@ -78,7 +81,7 @@ ns.RegisterBuiltinAPL({
             { name = "ST", prefix = "OST", min = 1, max = 1, entries = {
                 { spell = "hunters_mark", when = "combat.time=0&!prev.hunters_mark" },
                 { spell = "barbed_shot", when = "combat.casts<=1" },
-                { spell = "bestial_wrath", when = "combat.casts=2" },
+                { spell = "bestial_wrath", when = "combat.casts=2", hold = 3 },
                 { spell = "kill_command", when = "combat.casts=3" },
                 { spell = "cobra_shot", when = "combat.casts=4" },
                 { spell = "barbed_shot", when = "combat.casts=5" },
@@ -90,7 +93,7 @@ ns.RegisterBuiltinAPL({
                 { spell = "wild_thrash", when = "combat.casts=0" },
                 { spell = "barbed_shot", when = "combat.casts=1" },
                 { spell = "kill_command", when = "combat.casts=2" },
-                { spell = "bestial_wrath", when = "combat.casts=3" },
+                { spell = "bestial_wrath", when = "combat.casts=3", hold = 3 },
                 { spell = "barbed_shot", when = "combat.casts=4" },
                 { spell = "kill_command", when = "combat.casts=5" },
                 { spell = "cobra_shot", when = "combat.casts=6" },
@@ -101,7 +104,7 @@ ns.RegisterBuiltinAPL({
                 -- Spend Barbed Shot before Bestial Wrath (which wants it at
                 -- 0 charges), or so it never sits at 2.
                 { spell = "barbed_shot", when = "charges.barbed_shot.full|variable.bw_soon" },
-                { spell = "bestial_wrath", when = "charges.barbed_shot=0" },
+                { spell = "bestial_wrath", when = "charges.barbed_shot=0", hold = 3 },
                 { spell = "kill_command", when = "variable.kc_buffed" },
                 { spell = "cobra_shot", when = "buff.cobra_fang.up" },
                 { spell = "barbed_shot" },
@@ -111,7 +114,7 @@ ns.RegisterBuiltinAPL({
                 -- Right after Bestial Wrath, or to (re)apply Beast Cleave.
                 { spell = "wild_thrash", when = "prev.bestial_wrath|!buff.beast_cleave.up" },
                 { spell = "barbed_shot", when = "charges.barbed_shot.full" },
-                { spell = "bestial_wrath", when = "buff.beast_cleave.up" },
+                { spell = "bestial_wrath", when = "buff.beast_cleave.up", hold = 3 },
                 { spell = "wild_thrash" },
                 { spell = "kill_command", when = "variable.kc_buffed" },
                 { spell = "cobra_shot", when = "buff.cobra_fang.up" },

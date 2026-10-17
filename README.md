@@ -4,11 +4,12 @@
 
 APL for EUI is designed to replace the default client's **Assisted Highlight** with a rotation helper that follows a real-world APL. Instead of Blizzard's generic "press this next" hint, it follows a priority list you can see, edit, share and tune for your spec, hero talents and content. It also shows how closely you're following it.
 
-> **Status: 0.9, in active development.** Default APLs exist for only two specs so far:
+> **Status: 0.11, in active development.** Default APLs exist for only three specs so far:
 > - **Windwalker Monk**, Conduit of the Celestials
 > - **Beast Mastery Hunter**, Pack Leader
+> - **Shadow Priest**, Archon (new; still being tuned in game)
 >
-> Every other spec works too, but you build its APL yourself with the in-game editor. Data harvesting (below) does most of the groundwork.
+> See [Default APLs](#default-apls) for how each one is doing. Every other spec works too, but you build its APL yourself with the in-game editor. Data harvesting (below) does most of the groundwork.
 
 ---
 
@@ -55,6 +56,27 @@ Building an APL for a new spec starts with finding spell and buff IDs. Switch on
 
 The **Discovered** section then adds any of it to your APL in one click. Buffs with a known cause can be added as a ready-made timer.
 
+## Default APLs
+
+Each default is a read-only starting point: duplicate it to tune it for your talents. The spells and buffs it needs tracked in the Cooldown Manager are listed at the top of its file in [`Defaults/`](Defaults/).
+
+### Windwalker Monk (Conduit of the Celestials)
+
+The author's main, and the class the APL was first built and tuned for. It's performing well in Mythic+ keys and raids. It has an opener group, holds Invoke Xuen for burst windows (`hold = 3`), keeps a Zenith charge in reserve for Xuen, and avoids breaking Combo Strikes.
+
+### Beast Mastery Hunter (Pack Leader)
+
+One of the less complicated rotations and talent setups, and it's performing well. Built from Method's guide plus an in-game harvest, with single-target and multi-target openers. Bestial Wrath is holdable (`hold = 3`), so you can save it for a burst window. Dark Ranger isn't covered yet.
+
+### Shadow Priest (Archon)
+
+New, and still being tuned. In limited testing it already outperforms Blizzard's Single-Button Assistant. It's built from Method's guide plus an in-game harvest. Like any DoT class, it runs into the limits of combat secrecy:
+
+- **Whether** your Vampiric Touch is on your **current target** can be read through the Cooldown Manager, so switching to an undotted target is caught.
+- **How long** a DoT has left can't be read on any target, so DoT timers are tracked from your own casts. They follow your last cast, not each target: on a target you dotted earlier, a refresh may come a little late.
+- **Spreading DoTs across many targets** isn't modelled. The APL can't tell which mobs still need a DoT, so in AoE it runs the damage priority and leaves dotting to you.
+- **Target health is secret**, so Shadow Word: Death's execute window isn't in the APL.
+
 ## Requirements
 
 - **World of Warcraft: Midnight** (Interface 120100).
@@ -74,7 +96,7 @@ The **Discovered** section then adds any of it to your APL in one click. Buffs w
 In Midnight, much of the game's combat data is **secret** to addons during restricted combat, including dungeons, raids and even training-dummy fights. That covers cooldown timers, buff durations and stack counts, and resources such as Energy. APL for EUI only uses what stays readable and fills the gaps itself:
 
 - **Yes/no signals** for cooldowns, charges and "can I cast this", plus Chi and similar resources.
-- **Buffs through the Cooldown Manager.** Blizzard's Cooldown Manager can still show which buffs are active, so **a buff must be tracked there** for an APL to see it in combat.
+- **Buffs through the Cooldown Manager.** Blizzard's Cooldown Manager can still show which buffs are active, so **a buff must be tracked there** for an APL to see it in combat. The same goes for your own debuffs, which are seen on your current target only.
 - **Self-tracked timers and counters** for everything else, started from your casts (which stay readable).
 - **Enemies in combat within your range spell** for the target count.
 
@@ -114,7 +136,7 @@ Please don't guess spell IDs. Midnight has many spells that share a name but use
   lua tests/bm_test.lua .
   EAGER=1 lua tests/parity_sim.lua .
   ```
-  The other suites in [`tests/`](tests/) run the same way: `ui_smoke_test`, `editor_logic_test`, `exchange_test`, `groups_test`, `holds_test`, `glow_test` and `harvest_test`.
+  The other suites in [`tests/`](tests/) run the same way: `ui_smoke_test`, `editor_logic_test`, `exchange_test`, `groups_test`, `holds_test`, `glow_test`, `harvest_test` and `shadow_test`.
 - Design notes and decisions: [`design.md`](design.md).
 
 ## Author and license

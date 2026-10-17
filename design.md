@@ -16,7 +16,7 @@ class/spec, edited in game inside the EllesmereUI plugin section.
 | Burst / conditional lists | List sets that take priority while a condition holds (e.g. Courage of the White Tiger or HotJS up). Phase 5, same mechanism as openers. |
 | Holding cooldowns | An entry can be marked holdable: ignoring it for X casts sets a "holding" state that conditions can read; casting it (or leaving combat) clears it. Phase 6. |
 | Combo Strikes | Generic APL option "never suggest the last cast"; only the Windwalker APL turns it on. |
-| Spec support | A spec is "supported" when we ship a default APL for it. Windwalker Monk; Beast Mastery Hunter (Pack Leader) from a harvest + Method's guide, Dark Ranger pending a harvest with that hero tree. No Lua per spec: everything is configuration (below). The Lua spec registry was removed once Windwalker reached parity; re-add a hook only if something truly cannot be modelled. |
+| Spec support | A spec is "supported" when we ship a default APL for it. Windwalker Monk; Beast Mastery Hunter (Pack Leader) from a harvest + Method's guide, Dark Ranger pending a harvest with that hero tree; Shadow Priest (Archon) from a harvest + Method's guide. No Lua per spec: everything is configuration (below). The Lua spec registry was removed once Windwalker reached parity; re-add a hook only if something truly cannot be modelled. |
 | Shipped defaults | Default APLs, plus a library of ready-made timers, counters and variables (as we sort them out) that the editor copies into an APL. Copies, not references, so an APL stays self-contained. |
 | Import/Export | Wanted. Format still open (see Open items). |
 | Saved data | Per account (`APLforEUIDB`). |

@@ -61,7 +61,7 @@ return function(dir)
     -- S.idle[unit] = true: an enemy that isn't in combat.
     S.idle = {}
     UnitAffectingCombat = function(unit) return not S.idle[unit] end
-    Enum = { PowerType = { Mana = 0, Energy = 3, Chi = 12, ComboPoints = 4 } }
+    Enum = { PowerType = { Mana = 0, Energy = 3, Chi = 12, ComboPoints = 4, Insanity = 13 } }
     UnitPower = function(_, pt) if pt == 12 then return S.chi end return 0 end
     local BASE_CD = { [1249625] = 90000, [123904] = 120000 }
     GetSpellBaseCooldown = function(id) return BASE_CD[id] or 0 end
