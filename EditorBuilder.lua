@@ -38,6 +38,7 @@ local CATEGORIES = {
     { key = "channeling", label = "Channeling", tpl = "channeling.%s", source = "names" },
     { key = "override", label = "Button now is", tpl = "override.%s", source = "names", numeric = true, valueIsName = true },
     { key = "base_cd", label = "Base cooldown", tpl = "spell.%s.base_cd", source = "names", numeric = true },
+    { key = "recharge", label = "Recharge time", tpl = "spell.%s.recharge", source = "names", numeric = true },
     { key = "resource", label = "Resource", tpl = "resource.%s", source = "powers", numeric = true },
     { key = "timer_up", label = "Timer running", tpl = "timer.%s.up", source = "timers" },
     { key = "timer_remains", label = "Timer remaining", tpl = "timer.%s.remains", source = "timers", numeric = true },

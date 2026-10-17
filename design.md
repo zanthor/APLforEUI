@@ -20,7 +20,7 @@ class/spec, edited in game inside the EllesmereUI plugin section.
 | Shipped defaults | Default APLs, plus a library of ready-made timers, counters and variables (as we sort them out) that the editor copies into an APL. Copies, not references, so an APL stays self-contained. |
 | Import/Export | Wanted. Format still open (see Open items). |
 | Saved data | Per account (`APLforEUIDB`). |
-| Compliance | Unchanged: "did you press what we suggested", one rolling 60s window across all lists (opener, ST, AOE). |
+| Compliance | Unchanged: "did you press what we suggested", one rolling 60s window across all lists (opener, ST, AOE). Free casts (`def.freeCasts`, short names; export `free_cast+=/name`) are left out entirely: no stats entry, no hold ignore, no `combat.casts`, not the last cast (timers/counters still see them). |
 | Predictive (+1) | Benched. `predictive.md` stays for later. |
 | Data harvesting | A switch on the APLs tab collects the current spec's Cooldown Manager entries (C_CooldownViewer), class/spec spellbook, active talents (incl. hero tree), casts and, out of combat only, own buffs (duration, stacks, cause = the cast at expiration - duration) into a per-spec catalog (`APLforEUIDB.harvest`). Building Blocks > Discovered adds from it (names, or buff timers); Export Harvest gives text for building defaults. Mechanics measurement (cooldown reductions, stack sources) is a possible later stage. |
 | EUI dependency | Stock EllesmereUI only. The CDM glow finds the suggested spell's icon among Blizzard's Essential/Utility viewer item frames (EUI's CDM restyles those; IDs verified readable in restricted combat) and draws with `EllesmereUI.Glows`, restriction-safe styles only. Action bar buttons glow too (off by default): slots from C_ActionBar.FindSpellActionButtons mapped to EABButton<slot> / Blizzard bar buttons, macros through their current spell, the assisted-combat button skipped. Settings: their own Glows section between APL and Widgets, one block per target. Icons EUI adds itself (outside Blizzard's tracked set) can't glow. |
@@ -199,7 +199,9 @@ The APL can't know you are saving a cooldown for a burst window. Instead it
 notices you skipping one:
 
 - An entry can be marked **holdable** with a threshold N ("held after
-  ignoring it N times").
+  ignoring it N times"). N is 3 or more (`Engine.MIN_HOLD`): 1 would hold
+  on any other press and 2 is what the hold fork already does; saved holds
+  of 1-2 are raised to 3 by `Engine.Migrate`.
 - **Ignored** = the entry was the suggestion when you cast something else.
   At N, that spell becomes **held**.
 - While held, the entry is skipped (the APL suggests what comes next), and
@@ -210,6 +212,17 @@ notices you skipping one:
   the suggestion, resets it.
 - **Compliance:** the N ignored casts are re-scored as compliant once the
   spell becomes held.
+- **Hold fork:** while the top suggestion is a hold line (not yet held), the
+  engine also returns the next valid action below it (later groups
+  included; every line of the hold spell skipped; one level only). The hold
+  spell glows in **Hold Color** (per Glows block, always applied, beside
+  Glow Color), the alternative in the normal glow; the Suggestion Widget
+  tags the line "(hold)". Casting the alternative holds the spell from the
+  second cast while the hold line is up (the first cast only counts as an
+  ignore: it may be a press already in flight when the hold spell came off
+  cooldown, often the very same spell), and forgives the ignore streak
+  including that cast; casting the hold spell is normal; anything else
+  counts as an ignore.
 - **Display:** the compliance % on the status widget and broker gets a
   prefix: none for 0-1 consecutive ignores, yellow `*` from 2 ignores until
   held, green `*` while anything is held.

@@ -15,7 +15,7 @@ APL for EUI is designed to replace the default client's **Assisted Highlight** w
 ## What it does
 
 - **Suggests your next cast.** A movable **Suggestion Widget** shows the spell to press, with its icon and the entry label (e.g. `ST3`). It can optionally speak a short name over text-to-speech.
-- **Glows the right button.** The suggested spell glows on its Cooldown Manager icon (on by default) and, optionally, on its action bar buttons, including macros that cast it. Both use EUI's own glow styles, set separately. If you use the action bar glow, turn off Blizzard's Assisted Highlight so two buttons don't glow at once.
+- **Glows the right button.** The suggested spell glows on its Cooldown Manager icon (on by default) and, optionally, on its action bar buttons, including macros that cast it. Both use EUI's own glow styles, set separately, and glow in combat only or always (the cog next to Enabled). If you use the action bar glow, turn off Blizzard's Assisted Highlight so two buttons don't glow at once.
 - **Tracks compliance.** A **Status Widget** (and a LibDataBroker feed for EUI DataBars) shows your last 60 seconds: casts, the percentage that matched the suggestion, and broken Combo Strikes for Windwalker.
 - **Is fully editable in game.** APLs, lists, entries, conditions, timers, counters and variables are all edited in the EllesmereUI options panel, with no Lua.
 
@@ -24,6 +24,7 @@ APL for EUI is designed to replace the default client's **Assisted Highlight** w
 ### APLs that work like SimC
 - **Groups of lists by target count:** `1`, `2-4`, `5+` and so on. The first active group with a list for the current target count suggests. If that list has nothing ready, the next group gets a turn.
 - **Openers and burst windows** are just groups with a condition, e.g. "first 5 casts or 8 seconds of combat" (one click), or "while Bestial Wrath is up".
+- **Free casts:** a per-APL list of spells (interrupts, movement, defensives) you can press at any time without lowering compliance. They don't count as ignoring a hold line or as the last cast. The Windwalker default lists its kick, crowd control, movement and defensives.
 - **Conditions** can be built **point-and-click** (All / Any / None of these, with is / is-not rows), or typed as **SimC-style text** with autocomplete and live error checking:
   ```
   buff.zenith.up&variable.stomp_ready&(resource.chi<=4|variable.zenith_almost_over)
@@ -32,7 +33,7 @@ APL for EUI is designed to replace the default client's **Assisted Highlight** w
 - **Every entry checks that its spell is actually usable** (resources, requirements, talented), so it never suggests something you can't cast.
 
 ### Holding cooldowns
-Mark an entry as holdable: "if I ignore this N times in a row, I'm saving it". The APL then stops suggesting it and suggests what to do instead. Other entries can react to `holding`. Your compliance score isn't penalised for the deliberate hold, and a green `*` on the Status Widget shows a cooldown is being held.
+Mark an entry as holdable: "if I ignore this N times in a row, I'm saving it" (N is 3 or more). While a holdable line is the suggestion, its spell glows in a separate **Hold Color**, and the next action down the APL glows normally beside it (turn on **Persistent Hold**, in the cog by the colors, to keep the Hold Color glow on a held spell until you use it). Press that next action twice in a row and the cooldown is held, without waiting for N ignores (the first press doesn't hold it on its own, so a press already on its way when the cooldown came up never holds it by accident). Otherwise, after N ignores the APL stops suggesting it and suggests what to do instead. Other entries can react to `holding`. Your compliance score isn't penalised for the deliberate hold, and a green `*` on the Status Widget shows a cooldown is being held.
 
 ### Import and export
 APLs export as readable SimC-style text, so you can paste them in Discord, keep them in a gist, or diff two versions:

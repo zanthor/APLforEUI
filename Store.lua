@@ -281,6 +281,18 @@ function Store.AddList(def, group)
     return list
 end
 
+-- Free casts: spells cast outside the APL without a compliance penalty.
+-- Returns false if it's already on the list.
+function Store.AddFreeCast(def, spellName)
+    def.freeCasts = def.freeCasts or {}
+    for _, name in ipairs(def.freeCasts) do
+        if name == spellName then return false end
+    end
+    def.freeCasts[#def.freeCasts + 1] = spellName
+    Store.Changed(def)
+    return true
+end
+
 function Store.AddEntry(def, list, spellName)
     local entry = { spell = spellName, when = "" }
     list.entries[#list.entries + 1] = entry
@@ -381,6 +393,9 @@ function Store.RenameBlock(def, kind, item, new)
             end
         end
         if def.options and def.options.rangeSpell == old then def.options.rangeSpell = new end
+        for i, name in ipairs(def.freeCasts or {}) do
+            if name == old then def.freeCasts[i] = new end
+        end
     else
         local arrayKey = kind == "timer" and "timers" or kind == "counter" and "counters" or "variables"
         for _, other in ipairs(def[arrayKey] or {}) do

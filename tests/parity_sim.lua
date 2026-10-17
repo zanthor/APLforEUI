@@ -17,6 +17,19 @@ ns.RegisterSpec = function(s) spec = s end
 assert(loadfile(dir .. "/tests/legacy_Monk_Windwalker.lua"))("APLforEUI", ns)
 for _, p in ipairs(printed) do print_real("addon printed: " .. p) end
 
+-- The built-in's Zenith reserve was fixed after conversion (real recharge,
+-- hold while Xuen is ready); the legacy code has the original rule, so the
+-- comparison puts that rule back.
+for _, v in ipairs(ns.Engine.BuiltinForSpec(269).variables) do
+    if v.name == "safe_zenith" then
+        v.expr = "charges.zenith.full|(charges.zenith>=1&!(timer.xuen.remains<spell.zenith.base_cd))"
+    end
+end
+-- The legacy code has no opener group; compare the Default group alone.
+local builtinGroups = ns.Engine.BuiltinForSpec(269).groups
+assert(builtinGroups[1].name == "Opener")
+table.remove(builtinGroups, 1)
+ns.Engine.Invalidate(ns.Engine.BuiltinForSpec(269))
 local rt = ns.GetActiveAPL()
 assert(spec and rt, "spec or apl missing")
 assert(#rt.errors == 0, "compile errors")

@@ -299,7 +299,7 @@ end
 local function UpdateSuggestWidget()
     if not _suggestFS or not _suggestIcon then return end
     if GetTime() < _suggestSuppressUntil then return end
-    local spellID, step = ns.EvaluateExpected()
+    local spellID, step, _, entry = ns.EvaluateExpected()
     if not spellID then
         -- Nothing applies (design.md "No match"): show nothing.
         if _lastSuggestedSpellID ~= nil then
@@ -313,7 +313,9 @@ local function UpdateSuggestWidget()
     if spellID == _lastSuggestedSpellID and step == _lastSuggestedStep then return end
     _lastSuggestedSpellID, _lastSuggestedStep = spellID, step
     _suggestSuppressUntil = GetTime() + GetSuggestGlobalSuppression()
-    _suggestFS._fullText = (step and (step .. ": ") or "") .. SpellName(spellID)
+    -- A hold line (the hold fork, design.md phase 6) is tagged.
+    local tag = (entry and entry.hold) and " (hold)" or ""
+    _suggestFS._fullText = (step and (step .. tag .. ": ") or "") .. SpellName(spellID)
     TruncateFontStringText(_suggestFS, _suggestFS._fullText, GetSuggestTextMaxWidth())
     local info = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
     _suggestIcon:SetTexture(info and info.iconID)

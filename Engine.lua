@@ -68,6 +68,18 @@ local function ChargesFull(spellID)
     return Bool(IsOffCooldown(spellID))
 end
 
+-- A charge spell's recharge time. The game's "base cooldown" is not it
+-- (Zenith reads 16s for a 90s recharge), and GetSpellCharges'
+-- cooldownDuration is secret in restricted combat, so it's read whenever it
+-- isn't (out of combat; first at compile) and remembered.
+local _rechargeCache = {}
+local function Recharge(spellID)
+    local ci = C_Spell and C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(spellID)
+    local d = ci and Clean(ci.cooldownDuration)
+    if type(d) == "number" and d > 0 then _rechargeCache[spellID] = d end
+    return _rechargeCache[spellID]
+end
+
 local function Usable(spellID)
     if not (C_Spell and C_Spell.IsSpellUsable) then return nil end
     local usable = Clean(C_Spell.IsSpellUsable(spellID))
@@ -117,10 +129,14 @@ local function MakeResolver(rt)
             local id = SpellID(a)
             return function() return Usable(ResolveOverride(id)) end
         elseif head == "spell" then
-            Want(path, 3, "spell.<name>.base_cd")
-            if b ~= "base_cd" then Fail("unknown spell field '" .. b .. "'") end
+            Want(path, 3, "spell.<name>.base_cd or spell.<name>.recharge")
             local id = SpellID(a)
-            return function() return BaseCooldown(id) end
+            if b == "base_cd" then return function() return BaseCooldown(id) end end
+            if b == "recharge" then
+                Recharge(id)  -- cache it now, while it's readable
+                return function() return Recharge(id) end
+            end
+            Fail("unknown spell field '" .. b .. "'")
         elseif head == "buff" then
             Want(path, 3, "buff.<name>.up")
             if b ~= "up" then Fail("unknown buff field '" .. b .. "'") end
@@ -296,6 +312,7 @@ function Engine.Compile(def)
         timers = {}, counters = {}, trackers = {},
         varFns = {}, groups = {}, errors = {}, tts = {},
         holds = {},  -- [base spellID] = { count = consecutive ignores, held = bool }
+        free = {},   -- free casts: spellIDs that never count against compliance
         ctx = { vars = {} },
     }
     local options = def.options or {}
@@ -304,6 +321,12 @@ function Engine.Compile(def)
 
     local function err(where, msg) rt.errors[#rt.errors + 1] = where .. ": " .. tostring(msg) end
     local resolve = MakeResolver(rt)
+
+    -- Free casts (interrupts, movement, defensives): across every group.
+    for _, name in ipairs(def.freeCasts or {}) do
+        local id = rt.names[name]
+        if id then rt.free[#rt.free + 1] = id else err("free casts", "unknown name '" .. tostring(name) .. "'") end
+    end
 
     -- Keyed by spell ID so the widget can look up whatever it is showing.
     for name, text in pairs(def.tts or {}) do
@@ -378,8 +401,8 @@ function Engine.Compile(def)
                     local entry = { spellID = id, label = label, checkUsable = edef.usable ~= false }
                     if edef.hold ~= nil then
                         local n = tonumber(edef.hold)
-                        if n and n >= 1 and n == math.floor(n) then entry.hold = n
-                        else err(where, "hold must be a whole number of 1 or more") end
+                        if n and n >= Engine.MIN_HOLD and n == math.floor(n) then entry.hold = n
+                        else err(where, "hold must be a whole number of " .. Engine.MIN_HOLD .. " or more") end
                     end
                     local ok = true
                     if edef.when and edef.when ~= "" then
@@ -403,10 +426,32 @@ function Engine.PrefixFromName(name, fallback)
     return p ~= "" and p or fallback
 end
 
+-- Smallest "Hold After Ignored Casts": 1 would hold on any single other
+-- press, and 2 is what the hold fork's alternative already does (a hold
+-- from the second cast on the hold line), so the setting starts at 3.
+Engine.MIN_HOLD = 3
+
+-- Every entry of def, grouped (current) or flat (pre-group APLs).
+local function EachEntry(def, fn)
+    for _, group in ipairs(def.groups or {}) do
+        for _, l in ipairs(group.lists or {}) do
+            for _, e in ipairs(l.entries or {}) do fn(e) end
+        end
+    end
+    for _, l in ipairs(def.lists or {}) do
+        for _, e in ipairs(l.entries or {}) do fn(e) end
+    end
+end
+
 -- Pre-group APLs had one flat "lists" array: it becomes a single
 -- unconditional "Default" group. Groups saved before prefixes were
 -- required get one from their name. Safe to call repeatedly.
 function Engine.Migrate(def)
+    -- Holds below MIN_HOLD (allowed before the hold fork) are raised to it.
+    EachEntry(def, function(e)
+        local n = tonumber(e.hold)
+        if n and n >= 1 and n < Engine.MIN_HOLD then e.hold = Engine.MIN_HOLD end
+    end)
     if def.lists and not def.groups then
         def.groups = { { name = "Default", prefix = "DEF", lists = def.lists } }
         def.lists = nil
@@ -447,10 +492,8 @@ end
 -- next group gets a turn (design.md, phase 5). Held entries (phase 6) are
 -- skipped. Returns (spellID, label, listName, entry), or nil when nothing
 -- applies.
-function Engine.Evaluate(rt)
-    local ctx = rt.ctx
-    wipe(ctx.vars)
-    ctx.targets = ns.GetTargetCount(rt.rangeSpellID)
+-- The first valid entry, skipping every entry for skipID (a base spellID).
+local function Pick(rt, ctx, skipID)
     local last = ns.lastCastSpellID
     for _, group in ipairs(rt.groups) do
         if not group.broken and (not group.when or Truthy(group.when(ctx))) then
@@ -459,19 +502,34 @@ function Engine.Evaluate(rt)
                 for _, entry in ipairs(list.entries) do
                     local sid = ResolveOverride(entry.spellID)
                     local hold = rt.holds[entry.spellID]
-                    if not (hold and hold.held)
+                    if entry.spellID ~= skipID and not (hold and hold.held)
                         and not (rt.noRepeat and sid == last) and Ready(sid)
                         and (not entry.checkUsable or Usable(sid) ~= 0)
                         and (not entry.when or Truthy(entry.when(ctx))) then
-                        rt.lastListName = list.name
                         return sid, entry.label, list.name, entry
                     end
                 end
             end
         end
     end
-    rt.lastListName = nil
     return nil
+end
+
+-- Returns (spellID, label, listName, entry, altSpellID), or nil when nothing
+-- applies. When the top entry is a hold line (not yet held), altSpellID is
+-- the next valid action below it -- the "hold fork": the hold spell shows in
+-- Hold Color and the alternative in the normal color, and casting the
+-- alternative (from the second cast on the hold line) holds the spell
+-- (OnCastResult).
+function Engine.Evaluate(rt)
+    local ctx = rt.ctx
+    wipe(ctx.vars)
+    ctx.targets = ns.GetTargetCount(rt.rangeSpellID)
+    local sid, label, listName, entry = Pick(rt, ctx, nil)
+    rt.lastListName = listName
+    local alt
+    if entry and entry.hold then alt = (Pick(rt, ctx, entry.spellID)) end
+    return sid, label, listName, entry, alt
 end
 
 -------------------------------------------------------------------------------
@@ -575,7 +633,8 @@ end
 
 -------------------------------------------------------------------------------
 --  Holding cooldowns (design.md, phase 6). Called for every in-combat cast
---  with the entry that was the suggestion when it was cast. Ignoring a
+--  with the entry that was the suggestion when it was cast (and the fork's
+--  alternative, altID, if that entry was a hold line). Ignoring a
 --  holdable entry N times in a row marks its spell held (its entry is then
 --  skipped); casting the spell, or a cast while it wasn't the suggestion,
 --  resets the count. Returns (resolved spellID, N) on the cast that makes a
@@ -585,7 +644,17 @@ local function IsCastOf(castID, baseID)
     return castID == baseID or castID == ResolveOverride(baseID)
 end
 
-function Engine.OnCastResult(rt, castID, entry)
+-- A cast of one of the APL's free casts: it's left out of compliance, holds,
+-- the cast count and "last cast" (Tracking.ReportCast).
+function Engine.IsFreeCast(rt, castID)
+    local free = rt.free
+    for i = 1, #free do
+        if IsCastOf(castID, free[i]) then return true end
+    end
+    return false
+end
+
+function Engine.OnCastResult(rt, castID, entry, altID)
     local holds = rt.holds
     local suggested = entry and entry.spellID
     for id, h in pairs(holds) do
@@ -602,10 +671,20 @@ function Engine.OnCastResult(rt, castID, entry)
         holds[suggested] = h
     end
     if h.held then return nil end
+    -- Casting the fork's alternative (the next valid action shown beside the
+    -- hold line) holds the spell, from the second cast while the hold line
+    -- is up: the first may be a press already on its way when the hold
+    -- spell came off cooldown (often the same spell as the alternative). The
+    -- whole ignore streak, this cast included, is forgiven.
+    if altID and castID == altID and h.count >= 1 then
+        local n = h.count + 1
+        h.count, h.held = math.max(n, entry.hold), true
+        return ResolveOverride(suggested), n, "alternative"
+    end
     h.count = h.count + 1
     if h.count < entry.hold then return nil end
     h.held = true
-    return ResolveOverride(suggested), h.count
+    return ResolveOverride(suggested), h.count, "ignores"
 end
 
 -- For the stats display: "held" when any spell is held, "warning" when a
@@ -617,6 +696,16 @@ function Engine.HoldState(rt)
         if h.count >= 2 then state = "warning" end
     end
     return state
+end
+
+-- Fills out (wiped first) with the spellID (override-resolved) of every
+-- spell currently held; for the Persistent Hold glow.
+function Engine.HeldSpells(rt, out)
+    wipe(out)
+    for id, h in pairs(rt.holds) do
+        if h.held then out[#out + 1] = ResolveOverride(id) end
+    end
+    return out
 end
 
 -- Combat ended: every hold and count starts over.

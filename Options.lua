@@ -174,7 +174,8 @@ local function BuildGlowSection(parent, y, key, title, enabledTip, extraRight)
     local function Style() return Cfg(key .. "Style") or 6 end
     local function IsBlackout() return styles[Style()] and styles[Style()].solidFill end
 
-    _, h = W:DualRow(parent, y,
+    local enabledRow
+    enabledRow, h = W:DualRow(parent, y,
         { type = "toggle", text = "Enabled", tooltip = enabledTip,
           getValue = function() return ns.GlowEnabled(key) end,
           setValue = function(v)
@@ -186,9 +187,23 @@ local function BuildGlowSection(parent, y, key, title, enabledTip, extraRight)
           disabled = off, disabledTooltip = "Enabled",
           getValue = Style,
           setValue = function(v) Set(key .. "Style", v); EllesmereUI:RefreshPage() end })
+    if not EllesmereUI._prebuilding then
+        EllesmereUI.BuildInlineCog(enabledRow._leftRegion, {
+            title = "Glow Settings",
+            disabled = off, disabledTooltip = "Enabled",
+            rows = {
+                { type = "dropdown", label = "Show",
+                  values = { always = "Always", combat = "Combat Only" },
+                  order = { "always", "combat" },
+                  get = function() return ns.GlowShow(key) end,
+                  set = function(v) ns.SetGlowShow(key, v) end },
+            },
+        })
+    end
     y = y - h
 
-    _, h = W:DualRow(parent, y,
+    local colorRow
+    colorRow, h = W:DualRow(parent, y,
         { type = "toggle", text = "Custom Color",
           tooltip = "Off: the style's own colors (black for Blackout).",
           disabled = off, disabledTooltip = "Enabled",
@@ -197,14 +212,38 @@ local function BuildGlowSection(parent, y, key, title, enabledTip, extraRight)
               if v then Set(key .. "Color", { r = 1, g = 0.82, b = 0 }) else Set(key .. "Color", nil) end
               EllesmereUI:RefreshPage()
           end },
-        { type = "colorpicker", text = "Glow Color", hasAlpha = false,
-          disabled = function() return off() or Cfg(key .. "Color") == nil end,
-          disabledTooltip = "Custom Color",
-          getValue = function()
-              local c = Cfg(key .. "Color") or { r = 1, g = 0.82, b = 0 }
-              return c.r, c.g, c.b
-          end,
-          setValue = function(r, g, b) Set(key .. "Color", { r = r, g = g, b = b }) end })
+        -- Glow Color (normal; needs Custom Color) | Hold Color (the hold
+        -- fork's hold spell; always applies).
+        { type = "multiSwatch", text = "Glow Color",
+          disabled = off, disabledTooltip = "Enabled",
+          swatches = {
+              { tooltip = "Glow Color", hasAlpha = false,
+                disabled = function() return Cfg(key .. "Color") == nil end,
+                disabledTooltip = "Custom Color",
+                getValue = function()
+                    local c = Cfg(key .. "Color") or { r = 1, g = 0.82, b = 0 }
+                    return c.r, c.g, c.b
+                end,
+                setValue = function(r, g, b) Set(key .. "Color", { r = r, g = g, b = b }) end },
+              { tooltip = "Hold Color", hasAlpha = false,
+                getValue = function()
+                    local c = ns.GlowHoldColor(key)
+                    return c.r, c.g, c.b
+                end,
+                setValue = function(r, g, b) Set(key .. "HoldColor", { r = r, g = g, b = b }) end },
+          } })
+    if not EllesmereUI._prebuilding then
+        EllesmereUI.BuildInlineCog(colorRow._rightRegion, {
+            title = "Hold Glow Settings",
+            disabled = off, disabledTooltip = "Enabled",
+            rows = {
+                { type = "toggle", label = "Persistent Hold",
+                  tooltip = "Off: a holdable spell glows in Hold Color only while it's the suggestion. On: it also keeps that glow for as long as it's held.",
+                  get = function() return ns.GlowPersistentHold(key) end,
+                  set = function(v) ns.SetGlowPersistentHold(key, v) end },
+            },
+        })
+    end
     y = y - h
 
     -- Always shown; only unlocked for the Blackout style.
@@ -241,9 +280,9 @@ end
 local function BuildGlowsPage(parent, yOffset)
     local y = yOffset
     y = BuildGlowSection(parent, y, "cdmGlow", "COOLDOWN MANAGER",
-        "Glow the suggested spell's icon in the Cooldown Manager, in combat. Works for spells tracked by the Cooldown Manager (Essential and Utility bars).")
+        "Glow the suggested spell's icon in the Cooldown Manager (in combat, or always: see the cog). Works for spells tracked by the Cooldown Manager (Essential and Utility bars).")
     y = BuildGlowSection(parent, y, "barGlow", "ACTION BARS",
-        "Glow the suggested spell's action bar buttons (and macros that cast it), in combat. Turn off Blizzard's Assisted Highlight so two buttons don't glow at once.",
+        "Glow the suggested spell's action bar buttons (and macros that cast it), in combat or always (the cog). Turn off Blizzard's Assisted Highlight so two buttons don't glow at once.",
         GLOW_BARS_RIGHT)
     return math.abs(y)
 end

@@ -17,8 +17,8 @@ local _trackedSpecID, _trackedRT
 -- be stored/passed through the castGUID-keyed tables below without a second
 -- parallel table.
 local function SnapshotExpected()
-    local spellID, step, _, entry = ns.EvaluateExpected()
-    return { spellID = spellID, step = step, entry = entry }
+    local spellID, step, _, entry, alt = ns.EvaluateExpected()
+    return { spellID = spellID, step = step, entry = entry, alt = alt }
 end
 
 -- Echo guard state for ReportCast (see comment there). Declared before the
@@ -143,6 +143,15 @@ local function ReportCast(spellID, expected)
         print("APL debug: cast detected spellID=" .. spellID .. " (" .. SpellName(spellID) .. ")")
     end
 
+    -- Free casts (interrupts, movement, defensives) are invisible to the
+    -- rest: no stats, no hold ignore, no cast count, not the "last cast".
+    if rt and ns.Engine.IsFreeCast(rt, spellID) then
+        if ns.chatOutput and InCombatLockdown() then
+            print("APL: " .. SpellName(spellID) .. " (free cast)")
+        end
+        return
+    end
+
     -- Only real rotation casts matter for compliance/mastery tracking --
     -- world/downtime casts between pulls would otherwise pollute the stats.
     local expectedSpellID = expected and expected.spellID
@@ -153,8 +162,16 @@ local function ReportCast(spellID, expected)
         local matched = not brokeMastery and spellID == expectedSpellID
         RecordStatsEntry(matched, brokeMastery, expectedSpellID)
         if rt then
-            local heldID, n = ns.Engine.OnCastResult(rt, spellID, expected and expected.entry)
+            local heldID, n, why = ns.Engine.OnCastResult(rt, spellID, expected and expected.entry, expected and expected.alt)
             if heldID then ns.ForgiveReports(heldID, n) end
+            -- /apl chat: what a hold line saw at this cast, and why it was held.
+            local e = expected and expected.entry
+            if ns.chatOutput and e and e.hold then
+                print(string.format("APL hold: %s (hold %d) suggested, alternative %s, cast %s -> %s",
+                    SpellName(expected.spellID), e.hold,
+                    expected.alt and SpellName(expected.alt) or "none", SpellName(spellID),
+                    heldID and ("HELD (" .. why .. ", " .. n .. ")") or "not held"))
+            end
             -- The hold marker may have changed with this cast.
             UpdateBrokerText()
             ns.UpdateStandaloneText()

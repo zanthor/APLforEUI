@@ -81,7 +81,7 @@ return function(dir)
             return nil
         end,
         GetSpellCharges = function(id)
-            if id == ZENITH then return { maxCharges = 2, isActive = S.zenCharges < 2 } end
+            if id == ZENITH then return { maxCharges = 2, isActive = S.zenCharges < 2, cooldownDuration = 90 } end
             return nil
         end,
         GetSpellCooldown = function(id)

@@ -34,6 +34,8 @@ function EllesmereUI.BuildVisOptsCBDropdown(parent, w, level, items, get, set, _
     cbDD = { items = items, get = get, set = set, opts = opts }
     return CreateFrame("Frame", nil, parent), function() end
 end
+local cogs = {}
+function EllesmereUI.BuildInlineCog(_, opts) cogs[#cogs + 1] = opts end
 function EllesmereUI.Widgets:SectionHeader() return CreateFrame("Frame"), 30 end
 function EllesmereUI.Widgets:DualRow(_, _, l, r)
     for _, cfg in ipairs({ l or false, r or false }) do if cfg then rows[#rows + 1] = cfg end end
@@ -41,6 +43,14 @@ function EllesmereUI.Widgets:DualRow(_, _, l, r)
 end
 
 local S, ns = dofile(dir .. "/tests/mock_wow.lua")(dir)
+-- These checks cover plain glows; the built-in Windwalker's Xuen holds
+-- (hold fork) are tested in their own section further down. Its Opener
+-- group is dropped so Xuen leads from the first cast.
+table.remove(ns.Engine.BuiltinForSpec(269).groups, 1)
+for _, l in ipairs(ns.Engine.BuiltinForSpec(269).groups[1].lists) do
+    for _, e in ipairs(l.entries) do e.hold = nil end
+end
+ns.Engine.Invalidate(ns.Engine.BuiltinForSpec(269))
 
 local fails = 0
 local function Check(ok, msg)
@@ -152,6 +162,12 @@ Check(Last().op == "start" and tickFn ~= nil, "re-enabled in combat: glow back")
 Fire("PLAYER_REGEN_ENABLED")
 Check(Last().op == "stop" and tickFn == nil, "combat end: glow off, no ticker")
 
+-- Show: Always glows out of combat too; back to Combat Only stops it.
+ns.SetGlowShow("cdmGlow", "always")
+Check(ns.DB().cdmGlowShow == "always" and Last().op == "start" and tickFn ~= nil, "always: glows out of combat")
+ns.SetGlowShow("cdmGlow", "combat")
+Check(ns.DB().cdmGlowShow == nil and Last().op == "stop" and tickFn == nil, "combat only (default, stored as nil): off out of combat")
+
 -- No glow engine (older or missing EUI): nothing happens, nothing errors.
 local saved = EllesmereUI.Glows
 EllesmereUI.Glows = nil
@@ -246,6 +262,52 @@ on = GlowingOn()
 Check(not on[EABButton1], "bar glow off again")
 Fire("PLAYER_REGEN_ENABLED")
 
+-- Hold fork: the hold spell glows in Hold Color, the alternative normally.
+local wwDef = ns.Engine.BuiltinForSpec(269)
+wwDef.groups[1].lists[1].entries[1].hold = 3   -- O1 Invoke Xuen
+ns.Engine.Invalidate(wwDef)
+ns.DB().cdmGlowStyle, ns.DB().cdmGlowColor, ns.DB().cdmGlowHoldColor = nil, nil, nil
+wipe(S.cd)
+local fid, _, _, fentry, falt = ns.EvaluateExpected()
+Check(fid == XUEN and fentry.hold == 3 and falt ~= nil, "fork on the built-in: Xuen with an alternative")
+-- The alternative (Zenith here) already has an icon from earlier.
+local firstNew = #calls + 1
+Fire("PLAYER_REGEN_DISABLED")
+local xuenStart, altStart
+for i = firstNew, #calls do
+    local c = calls[i]
+    local p = c.wrapper:GetParent()
+    if c.op == "start" and p == xuenItem then xuenStart = c end
+    if c.op == "start" and p.GetSpellID and p:GetSpellID() == falt then altStart = c end
+end
+Check(xuenStart and xuenStart.r == 0.25 and not xuenStart.opts.untinted, "hold spell in Hold Color (default)")
+Check(altStart and altStart.r == nil and altStart.opts.untinted, "alternative in the normal glow")
+-- Xuen held: without Persistent Hold its glow goes; with it, it stays in
+-- Hold Color for as long as it's held.
+local function XuenGlow()
+    local last
+    for _, c in ipairs(calls) do
+        if c.wrapper:GetParent() == xuenItem then last = c end
+    end
+    return last and last.op == "start" and last or nil
+end
+local wwRT = ns.GetActiveAPL()
+wwRT.holds[XUEN] = { count = 2, held = true }
+tickFn()
+Check(XuenGlow() == nil, "held, Persistent Hold off: no glow on Xuen")
+ns.SetGlowPersistentHold("cdmGlow", true)
+Check(ns.DB().cdmGlowPersistentHold == true, "Persistent Hold stored")
+local pg = XuenGlow()
+Check(pg and pg.r == 0.25 and not pg.opts.untinted, "held, Persistent Hold on: Xuen glows in Hold Color")
+wwRT.holds[XUEN] = nil
+tickFn()
+Check(XuenGlow() and XuenGlow().r == 0.25, "hold over (cast): back to the fork's hold glow")
+ns.SetGlowPersistentHold("cdmGlow", false)
+Check(ns.DB().cdmGlowPersistentHold == nil, "Persistent Hold off stored as default")
+Fire("PLAYER_REGEN_ENABLED")
+wwDef.groups[1].lists[1].entries[1].hold = nil
+ns.Engine.Invalidate(wwDef)
+
 -- Glows page: its own module between APL and Widgets, one section per target.
 local mod
 for _, m in ipairs(plugin.modules) do if m.key == "Glows" then mod = m end end
@@ -286,15 +348,36 @@ local offered = {}
 for _, v in ipairs(styleRow.order) do offered[#offered + 1] = styleRow.values[v] end
 Check(table.concat(offered, ",") == "GCD,Modern WoW Glow,Classic WoW Glow,Blackout", "only restriction-safe styles offered: " .. table.concat(offered, ","))
 Check(Row("Blackout Opacity") and Row("Blackout Opacity").disabled() == true, "opacity slider shown but locked unless Blackout")
+-- Per section: the Show cog (Enabled row), then the Hold Glow cog (color row).
+Check(#cogs == 4 and cogs[1].title == "Glow Settings" and cogs[1].rows[1].label == "Show"
+    and cogs[3].title == "Glow Settings", "a Glow Settings cog per section")
+Check(cogs[1].rows[1].get() == "combat" and cogs[1].rows[1].order[1] == "always", "Show: Always / Combat Only, combat by default")
+cogs[3].rows[1].set("always")
+Check(ns.GlowShow("barGlow") == "always" and ns.GlowShow("cdmGlow") == "combat", "each section has its own Show")
+cogs[3].rows[1].set("combat")
+Check(cogs[2].title == "Hold Glow Settings" and cogs[2].rows[1].label == "Persistent Hold"
+    and cogs[4].title == "Hold Glow Settings", "a Hold Glow Settings cog on each color row")
+Check(cogs[2].rows[1].get() == false, "Persistent Hold off by default")
+cogs[2].rows[1].set(true)
+Check(ns.GlowPersistentHold("cdmGlow") and not ns.GlowPersistentHold("barGlow"), "Persistent Hold per section")
+cogs[2].rows[1].set(false)
+Check(cogs[3].disabled() == true and cogs[4].disabled() == true and cogs[1].disabled() == false, "cogs locked while their glow is off")
 Row("Enabled").setValue(false)
 Check(ns.DB().cdmGlow == false, "Enabled off stored")
 Row("Enabled").setValue(true)
 Check(ns.DB().cdmGlow == nil, "Enabled on stored as default")
 Build()
-Check(Row("Glow Color").disabled() == true, "color locked until Custom Color")
+local colors = Row("Glow Color")
+Check(colors.type == "multiSwatch" and colors.swatches[1].tooltip == "Glow Color" and colors.swatches[2].tooltip == "Hold Color",
+    "Glow Color and Hold Color swatches")
+Check(colors.swatches[1].disabled() == true and colors.swatches[2].disabled == nil, "glow color locked until Custom Color; hold color always usable")
+local hr, hg, hb = colors.swatches[2].getValue()
+Check(hr == 0.25 and hg == 0.6 and hb == 1, "hold color default")
+colors.swatches[2].setValue(0.9, 0.1, 0.9)
+Check(ns.DB().cdmGlowHoldColor.r == 0.9, "hold color stored")
 Row("Custom Color").setValue(true)
 Build()
-Check(ns.DB().cdmGlowColor ~= nil and Row("Glow Color").disabled() == false, "custom color unlocks the picker")
+Check(ns.DB().cdmGlowColor ~= nil and Row("Glow Color").swatches[1].disabled() == false, "custom color unlocks the glow color")
 Row("Glow Style").setValue(8)
 Check(Row("Blackout Opacity").disabled() == false, "Blackout unlocks the slider without a rebuild")
 Row("Glow Style").setValue(6)

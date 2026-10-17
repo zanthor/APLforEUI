@@ -138,7 +138,7 @@ local function BuildListBody(parent, y, def, list, editable)
             _, h = W:DualRow(sub, y,
                 { type = "input", text = "Hold After Ignored Casts", inputWidth = 60, inputStyle = "popup",
                   placeholder = "Never",
-                  tooltip = "If you cast something else this many times in a row while this entry is the suggestion, its spell counts as held: the entry is skipped and holding / holding.<name> read true, until you cast it or combat ends. Leave empty to never hold.",
+                  tooltip = "If you cast something else this many times in a row (3 or more) while this entry is the suggestion, its spell counts as held: the entry is skipped and holding / holding.<name> read true, until you cast it or combat ends. Casting the next action shown beside it twice in a row holds it sooner. Leave empty to never hold.",
                   disabled = ro, disabledTooltip = Kit.READ_ONLY_TIP,
                   getValue = function() return entry.hold and tostring(entry.hold) or "" end,
                   setValue = function(v)
@@ -148,7 +148,10 @@ local function BuildListBody(parent, y, def, list, editable)
                           entry.hold = nil
                       else
                           local n = tonumber(v)
-                          if not n or n < 1 or n ~= math.floor(n) then Say("hold must be a whole number of 1 or more.") return end
+                          if not n or n < Engine.MIN_HOLD or n ~= math.floor(n) then
+                              Say("hold must be a whole number of " .. Engine.MIN_HOLD .. " or more.")
+                              return
+                          end
                           if n == entry.hold then return end
                           entry.hold = n
                       end
@@ -180,6 +183,23 @@ local function BuildListBody(parent, y, def, list, editable)
           end },
         { type = "spacer" })
     return y - h
+end
+
+-- Open state key for the Free Casts row (Kit.state.open is keyed by table).
+local FREE_CASTS = {}
+Editor.FREE_CASTS_KEY = FREE_CASTS  -- for tests
+
+-- "7 spells: Spear Hand Strike, Paralysis, ..." (names cut to fit one row).
+local function FreeCastsTitle(def, free)
+    local n = #free
+    if n == 0 then return "None   |cff909090click to add|r" end
+    local names = {}
+    for i = 1, math.min(n, 4) do
+        local id = def.names and def.names[free[i]]
+        names[i] = id and ns.SpellName(id) or free[i]
+    end
+    local text = table.concat(names, ", ") .. (n > 4 and ", ..." or "")
+    return n .. (n == 1 and " spell" or " spells") .. "   |cff909090" .. text .. "|r"
 end
 
 local function GroupTitle(group)
@@ -294,6 +314,49 @@ function Editor.BuildListsPage(parent, yOffset)
     end
 
     y = Kit.Problems(parent, y, def)
+
+    -- Free casts: before the groups, applying across all of them. One
+    -- collapsed row (closed by default) so it doesn't push the groups down.
+    _, h = W:SectionHeader(parent, "FREE CASTS", y); y = y - h
+    local free = def.freeCasts or {}
+    local freeOpen = Kit.IsOpen(FREE_CASTS)
+    local freeTop = y
+    y = Kit.Header(parent, y, {
+        title = FreeCastsTitle(def, free),
+        open = freeOpen, editable = editable,
+        tooltip = "Spells you can cast at any time without lowering compliance. Click to show or edit them.",
+        onClick = function() Kit.Toggle(FREE_CASTS) end,
+    })
+    if freeOpen then
+        local sub = Kit.Child(parent)
+        y = Kit.Note(sub, y, "Spells you can cast at any time without lowering compliance: interrupts, movement, defensives. They never count as ignoring a hold line, and don't count as the last cast.")
+        for i, name in ipairs(free) do
+            y = Kit.Header(sub, y, {
+                title = SpellLabel(def, name),
+                editable = editable,
+                onDelete = function()
+                    Store.Remove(def, free, i)
+                    Kit.Rebuild()
+                end,
+                deleteTip = "Remove free cast",
+            })
+        end
+        _, h = W:DualRow(sub, y,
+            { type = "input", text = "Add Free Cast", inputWidth = 200, inputStyle = "popup",
+              placeholder = "Spell name or ID",
+              disabled = function() return not editable end, disabledTooltip = Kit.READ_ONLY_TIP,
+              getValue = function() return "" end,
+              setValue = function(v)
+                  local name = SpellFromText(def, v)
+                  if not name then return end
+                  if not Store.AddFreeCast(def, name) then Say(SpellLabel(def, name) .. " is already a free cast.") return end
+                  Kit.Rebuild()
+              end },
+            { type = "spacer" })
+        y = y - h
+        Kit.OpenSpan(parent, freeTop, y, 0)
+    end
+
     _, h = W:SectionHeader(parent, "GROUPS", y); y = y - h
     y = Kit.Note(parent, y, "Groups are tried top to bottom. The first active group with a list for the target count suggests; if that list has nothing, the next group gets a turn.")
     local groups = def.groups or {}

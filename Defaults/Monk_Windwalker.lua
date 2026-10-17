@@ -1,11 +1,15 @@
 local _, ns = ...
 
 -------------------------------------------------------------------------------
---  Built-in Windwalker APL: the simplified test APL from monkapl.md as
---  data. Labels are list prefix + position (ST9, AOE13); positions differ
---  from monkapl.md's step numbers because the O1/O2 opener entries come
---  first and step 5 has no entry of its own.
---  tests/parity_sim.lua checks it against the original Lua version.
+--  Built-in Windwalker APL: an Opener group on top of the simplified test
+--  APL from monkapl.md as data. Labels are list prefix + position (O3, ST9,
+--  AOE13); Default positions differ from monkapl.md's step numbers because
+--  the Xuen/Zenith entries come first and step 5 has no entry of its own.
+--  tests/parity_sim.lua checks the Default group against the original Lua
+--  version.
+--  Invoke Xuen (in the opener and first in both Default lists) is holdable:
+--  ignored 3 times in a row, or skipped for the offered next action, it's
+--  held for a burst window.
 -------------------------------------------------------------------------------
 
 -- Zenith and Zenith Stomp share one button: once talented into Stomp every
@@ -44,6 +48,20 @@ ns.RegisterBuiltinAPL({
         shadowboxing_treads = 392982,
         restore_balance = 442719,       -- Invoke Xuen: 2 min cooldown
         xuens_bond = 292986,            -- Invoke Xuen: 90 sec cooldown
+        -- Free casts
+        spear_hand_strike = 116705,
+        paralysis = 115078,
+        roll = 109132,
+        tigers_lust = 116841,
+        fortifying_brew = 115203,
+        touch_of_karma = 122470,
+        leg_sweep = 119381,
+    },
+
+    -- Utility casts that never count against compliance.
+    freeCasts = {
+        "spear_hand_strike", "paralysis", "roll", "tigers_lust",
+        "fortifying_brew", "touch_of_karma", "leg_sweep",
     },
 
     -- Spoken by the Suggestion Widget's TTS; names without an entry stay silent.
@@ -64,9 +82,13 @@ ns.RegisterBuiltinAPL({
     variables = {
         -- Unknown (Xuen never seen cast) counts as not soon.
         { name = "xuen_soon", expr = "timer.xuen.remains<=10" },
-        -- Spend from 2 Zenith charges freely; from 1 only if a full recharge
-        -- fits before Xuen is back, so Xuen always has a charge with it.
-        { name = "safe_zenith", expr = "charges.zenith.full|(charges.zenith>=1&!(timer.xuen.remains<spell.zenith.base_cd))" },
+        -- Xuen itself is available (not yet turned into Celestial Conduit).
+        { name = "xuen_ready", expr = "override.invoke_xuen=invoke_xuen&cooldown.invoke_xuen.ready" },
+        -- Spend from 2 Zenith charges freely; from 1 only if Xuen isn't ready
+        -- (or being held) and the charge already recharging is back no later
+        -- than ~a GCD after Xuen (Zenith follows Xuen, never the same GCD).
+        -- Unknown timers (nothing cast yet this session) mean spend.
+        { name = "safe_zenith", expr = "charges.zenith.full|(charges.zenith>=1&!variable.xuen_ready&!(timer.zenith_recharge.remains>timer.xuen.remains+2))" },
         { name = "hotjs_ending", expr = "buff.hotjs.up&timer.hotjs.remains<=2" },
         -- "Almost over" = not enough time left to spend every Stomp charge (~3s each).
         { name = "zenith_almost_over", expr = "buff.zenith.up&timer.zenith.remains<=counter.stomp*3" },
@@ -88,6 +110,14 @@ ns.RegisterBuiltinAPL({
         { name = "zenith", triggers = {
             { on = "cast", spell = "zenith", action = "set", value = "20" },
             { on = "cast", spell = "zenith_stomp", when = ZENITH_BUILD_OR_EXTEND, action = "set", value = "20" },
+        } },
+        -- When the next Zenith charge is back. Each charge spent (a build or a
+        -- recast-to-extend) adds a full recharge: it starts one if none is
+        -- running, or queues behind the one that is. Recharge progress is
+        -- secret in combat, so it's tracked from casts.
+        { name = "zenith_recharge", triggers = {
+            { on = "cast", spell = "zenith", action = "add", value = "spell.zenith.recharge" },
+            { on = "cast", spell = "zenith_stomp", when = ZENITH_BUILD_OR_EXTEND, action = "add", value = "spell.zenith.recharge" },
         } },
         -- Heart of the Jade Serpent: WDP/Conduit grant a flat 6s; Zenith adds
         -- 4s to a window WDP/Conduit started, otherwise starts a fresh 4s.
@@ -131,14 +161,34 @@ ns.RegisterBuiltinAPL({
         } },
     },
 
-    -- Groups are tried top to bottom (design.md, phase 5); the built-in
-    -- has just the unconditional Default group.
+    -- Groups are tried top to bottom (design.md, phase 5): the Opener for
+    -- the first casts of a fight, then the unconditional Default group.
     groups = { {
+        -- Tiger Palm, Xuen, Zenith, Fists of Fury, Rising Sun Kick, Fists of
+        -- Fury again if the kick reset it, Whirling Dragon Punch. A priority
+        -- list, not cast-numbered steps: each line fires once its spell is
+        -- ready, so the reset Fists slots in on its own. Tiger Palm opens
+        -- only (the pre-pull press may land before combat starts counting,
+        -- hence the prev check). A step that can't go falls through to Default.
+        name = "Opener",
+        prefix = "OP",
+        when = "combat.casts<8&combat.time<20",
+        lists = {
+            { name = "Opener", prefix = "O", min = 1, entries = {
+                { spell = "tiger_palm", when = "combat.casts=0&!prev.tiger_palm" },
+                { spell = "invoke_xuen", when = "override.invoke_xuen=invoke_xuen", hold = 3 },
+                { spell = "zenith", when = "!buff.zenith.up&variable.safe_zenith" },
+                { spell = "fists_of_fury" },
+                { spell = "rising_sun_kick" },
+                { spell = "whirling_dragon_punch", when = "variable.wdp_usable" },
+            } },
+        },
+    }, {
         name = "Default",
         prefix = "DEF",
         lists = {
             { name = "ST", prefix = "ST", min = 1, max = 1, entries = {
-                { spell = "invoke_xuen", when = "override.invoke_xuen=invoke_xuen" },
+                { spell = "invoke_xuen", when = "override.invoke_xuen=invoke_xuen", hold = 3 },
                 { spell = "zenith", when = "!buff.zenith.up&variable.safe_zenith" },
                 { spell = "fists_of_fury", when = "variable.hotjs_ending&usable.fists_of_fury" },
                 { spell = "whirling_dragon_punch", when = "!buff.hotjs.up&variable.wdp_usable&!variable.xuen_soon" },
@@ -162,7 +212,7 @@ ns.RegisterBuiltinAPL({
                 { spell = "tiger_palm" },
             } },
             { name = "AOE", prefix = "AOE", min = 2, entries = {
-                { spell = "invoke_xuen", when = "override.invoke_xuen=invoke_xuen" },
+                { spell = "invoke_xuen", when = "override.invoke_xuen=invoke_xuen", hold = 3 },
                 { spell = "zenith", when = "!buff.zenith.up&variable.safe_zenith" },
                 { spell = "fists_of_fury", when = "variable.hotjs_ending&usable.fists_of_fury" },
                 { spell = "whirling_dragon_punch", when = "!buff.hotjs.up&variable.wdp_usable&!variable.xuen_soon" },

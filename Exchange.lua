@@ -110,6 +110,9 @@ function Exchange.Export(def)
         for _, trig in ipairs(c.triggers or {}) do L(TriggerLine("counter", c.name, trig)) end
     end
 
+    if def.freeCasts and #def.freeCasts > 0 then L("") end
+    for _, name in ipairs(def.freeCasts or {}) do L("free_cast+=/" .. name) end
+
     local taken, groupTaken = {}, {}
     for _, group in ipairs(def.groups or {}) do
         local gkey = ListKey(group.name, groupTaken)
@@ -299,6 +302,13 @@ function Exchange.Import(text)
                     else def.names[a] = id end
                 elseif head == "tts" and a ~= "" and b == "" then
                     if val ~= "" then def.tts[a] = val end
+                elseif head == "free_cast" and a == "" and op == "+=" then
+                    local name = StripComment(val)
+                    if not name:match("^[%a_][%w_]*$") then Err(n, "free_cast+=/ needs a spell short name")
+                    else
+                        def.freeCasts = def.freeCasts or {}
+                        def.freeCasts[#def.freeCasts + 1] = name
+                    end
                 elseif head == "variable" and a ~= "" and b == "" then
                     def.variables[#def.variables + 1] = { name = a, expr = val }
                 elseif (head == "timer" or head == "counter") and a ~= "" and b == "" then

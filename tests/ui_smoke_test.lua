@@ -121,6 +121,10 @@ Check(Row("Add Group").disabled() == true, "Add Group disabled on the built-in")
 dup.onClick()
 local def = Kit.Def()
 Check(Kit.Editable() and def.id:find("^user:"), "duplicate selected and editable")
+Check(def.groups[1].name == "Opener" and def.groups[2].name == "Default", "copy has the Opener and Default groups")
+-- The checks below edit the Default group as the first one.
+table.remove(def.groups, 1)
+Store.Changed(def)
 local function OpenAll()
     for _, g in ipairs(def.groups) do Kit.state.open[g] = true end
     for _, l in ipairs(def.groups[1].lists) do
@@ -138,6 +142,19 @@ OpenAll()
 for _, page in ipairs(mod.pages) do Build(page) end
 
 -- 3. Lists tab inputs.
+Build("Lists")
+local nFree = #def.freeCasts
+Check(nFree == 7 and Row("Add Free Cast") == nil, "free casts (monk defaults) collapsed by default")
+Kit.state.open[ns.Editor.FREE_CASTS_KEY] = true
+Build("Lists")
+Check(Row("Add Free Cast") ~= nil, "free casts expand when opened")
+Row("Add Free Cast").setValue("100780")
+Check(#def.freeCasts == nFree + 1, "free cast added from the page")
+Row("Add Free Cast").setValue("100780")
+Check(#def.freeCasts == nFree + 1, "duplicate free cast refused")
+table.remove(def.freeCasts)
+Store.Changed(def)
+Kit.state.open[ns.Editor.FREE_CASTS_KEY] = nil
 Build("Lists")
 local function ListPrefix()
     for _, cfg in ipairs(rec.rows) do
@@ -248,6 +265,8 @@ local holdRow = Row("Hold After Ignored Casts")
 Check(holdRow and holdRow.getValue() == "", "hold empty by default")
 holdRow.setValue("0")
 Check(entry.hold == nil, "hold 0 rejected")
+holdRow.setValue("2")
+Check(entry.hold == nil, "hold below 3 rejected")
 holdRow.setValue("2.5")
 Check(entry.hold == nil, "fractional hold rejected")
 holdRow.setValue("3")

@@ -196,6 +196,27 @@ function ns.SetGlowEnabled(key, on)
     ns.ApplyGlows()
 end
 
+-- When a target glows: "combat" (default, stored as nil) or "always".
+function ns.GlowShow(key)
+    return DB()[key .. "Show"] or "combat"
+end
+
+function ns.SetGlowShow(key, v)
+    if v == "combat" then DB()[key .. "Show"] = nil else DB()[key .. "Show"] = v end
+    ns.ApplyGlows()
+end
+
+-- Persistent Hold: a held spell keeps glowing in Hold Color for as long as
+-- it's held, not just while the hold fork shows it. Off by default.
+function ns.GlowPersistentHold(key)
+    return DB()[key .. "PersistentHold"] == true
+end
+
+function ns.SetGlowPersistentHold(key, on)
+    if on then DB()[key .. "PersistentHold"] = true else DB()[key .. "PersistentHold"] = nil end
+    ns.ApplyGlows()
+end
+
 local function Settings(key)
     local db = DB()
     local style = db[key .. "Style"] or DEFAULT_STYLE
@@ -203,6 +224,13 @@ local function Settings(key)
     return style, entry, db[key .. "Color"], db[key .. "Alpha"] or 0.5
 end
 ns.GlowSettings = Settings
+
+-- Hold Color: the hold fork's hold spell. Always used for it, whether or not
+-- Custom Color is on for the normal glow.
+ns.HOLD_COLOR_DEFAULT = { r = 0.25, g = 0.6, b = 1 }
+function ns.GlowHoldColor(key)
+    return DB()[key .. "HoldColor"] or ns.HOLD_COLOR_DEFAULT
+end
 
 -------------------------------------------------------------------------------
 --  Driver
@@ -213,7 +241,8 @@ local found = {}       -- scratch list per target
 local dirty = false
 local ticker
 local inCombat = false
-local want = {}         -- scratch: frames wanted this tick
+local want = {}         -- scratch: [frame] = "hold" | "normal" wanted this tick
+local held = {}         -- scratch: held spellIDs this tick (Persistent Hold)
 
 for _, t in ipairs(TARGETS) do shown[t.key] = {} end
 
@@ -238,9 +267,10 @@ local function StopAll(key)
     end
 end
 
-local function Start(target, frame, w, h)
+local function Start(target, frame, w, h, kind)
     local G = Glows()
     local style, entry, c, alpha = Settings(target.key)
+    if kind == "hold" then c = ns.GlowHoldColor(target.key) end
     local solid = entry and entry.solidFill
     -- CDM: Blackout under the swipe/text, others on top (EUI's own CDM glow
     -- levels). Action buttons: just above the button's own art.
@@ -251,45 +281,78 @@ local function Start(target, frame, w, h)
     return ov
 end
 
-local function TickTarget(target, spellID)
+-- spellID glows normally, or in Hold Color when it's a hold line (isHold);
+-- alt (the hold fork's next valid action) glows normally beside it. With
+-- Persistent Hold, every held spell glows in Hold Color too.
+local function TickTarget(target, spellID, isHold, alt, persist)
     local set = shown[target.key]
     wipe(found)
-    if spellID and ns.GlowEnabled(target.key) then target.find(spellID, found) end
-    local G = Glows()
-    -- Stop frames no longer wanted.
     wipe(want)
-    for _, frame in ipairs(found) do want[frame] = true end
+    if ns.GlowEnabled(target.key) then
+        if spellID then
+            target.find(spellID, found)
+            for i = 1, #found do want[found[i]] = isHold and "hold" or "normal" end
+        end
+        if alt then
+            local n = #found
+            target.find(alt, found)
+            for i = n + 1, #found do want[found[i]] = want[found[i]] or "normal" end
+        end
+        if persist and ns.GlowPersistentHold(target.key) then
+            for _, id in ipairs(held) do
+                local n = #found
+                target.find(id, found)
+                for i = n + 1, #found do want[found[i]] = want[found[i]] or "hold" end
+            end
+        end
+    end
+    local G = Glows()
+    -- Stop frames no longer wanted, or wanted in the other color.
     for frame, st in pairs(set) do
-        if dirty or not want[frame] then
+        if dirty or want[frame] ~= st.kind then
             G.StopGlow(st.ov)
             set[frame] = nil
         end
     end
     -- Start new ones, or restart on a size change.
-    for _, frame in ipairs(found) do
+    for frame, kind in pairs(want) do
         local w, h = frame:GetWidth(), frame:GetHeight()
         local st = set[frame]
         if not st or st.w ~= w or st.h ~= h then
             if st then G.StopGlow(st.ov) end
-            set[frame] = { ov = Start(target, frame, w, h), w = w, h = h }
+            set[frame] = { ov = Start(target, frame, w, h, kind), w = w, h = h, kind = kind }
         end
     end
 end
 
-local function AnyEnabled()
-    for _, t in ipairs(TARGETS) do if ns.GlowEnabled(t.key) then return true end end
+-- Glowing now: enabled, and in combat unless set to show always.
+local function Active(t)
+    return ns.GlowEnabled(t.key) and (inCombat or ns.GlowShow(t.key) == "always")
+end
+
+local function AnyActive()
+    for _, t in ipairs(TARGETS) do if Active(t) then return true end end
     return false
 end
 
 local function Tick()
     if not Glows() then return end
-    local spellID = inCombat and ns.EvaluateExpected() or nil
-    for _, t in ipairs(TARGETS) do TickTarget(t, spellID) end
+    local spellID, entry, alt
+    wipe(held)
+    if AnyActive() then
+        spellID, _, _, entry, alt = ns.EvaluateExpected()
+        local rt = ns.GetActiveAPL()
+        if rt then ns.Engine.HeldSpells(rt, held) end
+    end
+    local isHold = entry ~= nil and entry.hold ~= nil
+    for _, t in ipairs(TARGETS) do
+        if Active(t) then TickTarget(t, spellID, isHold, alt, true) else TickTarget(t, nil) end
+    end
     dirty = false
 end
 
 local function Sync()
-    if inCombat and AnyEnabled() and Glows() then
+    if AnyActive() and Glows() then
         if not ticker then ticker = C_Timer.NewTicker(POLL, Tick) end
         Tick()
     else
@@ -328,7 +391,7 @@ ns.slashCommands.glow = function()
         if expected then t.find(expected, list) end
         local n = 0
         for _ in pairs(shown[t.key]) do n = n + 1 end
-        print(string.format("  %s: enabled=%s style=%s framesFound=%d glowing=%d",
-            t.label, tostring(ns.GlowEnabled(t.key)), tostring((Settings(t.key))), #list, n))
+        print(string.format("  %s: enabled=%s show=%s style=%s framesFound=%d glowing=%d",
+            t.label, tostring(ns.GlowEnabled(t.key)), ns.GlowShow(t.key), tostring((Settings(t.key))), #list, n))
     end
 end

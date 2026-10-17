@@ -24,7 +24,7 @@ local def = Store.AddImported({
     names = { tp = TP, xuen = XUEN, fof = FOF },
     groups = { { name = "Default", prefix = "DEF", lists = {
         { name = "ST", prefix = "ST", min = 1, max = 1, entries = {
-            { spell = "xuen", hold = 2 },
+            { spell = "xuen", hold = 3 },
             { spell = "tp" },
         } },
     } } },
@@ -59,7 +59,7 @@ combat:GetScript("OnEvent")(combat, "PLAYER_REGEN_DISABLED")
 
 -- 1. Ignore Xuen once: counted, not held, the cast is a miss for now.
 Check(Suggest() == XUEN, "xuen suggested")
-Cast(TP)
+Cast(FOF)
 Check(Suggest() == XUEN and Holding("holding") == 0, "one ignore: not held yet")
 local total, pct = Stats()
 Check(total == 1 and pct == 0, "first ignore counts as a miss for now: " .. total .. "/" .. pct)
@@ -72,12 +72,14 @@ Cast(75)
 total = Stats()
 Check(total == 1 and ns.combatCasts == castsBefore and Holding("holding") == 0, "Auto Shot ignored by tracking")
 
--- 2. Second ignore in a row: held, entry skipped, both casts forgiven.
-Cast(TP)
-Check(Holding("holding") == 1 and Holding("holding.xuen") == 1 and Holding("holding.fof") == 0, "two ignores: xuen held")
+-- 2. Third ignore in a row: held, entry skipped, all three casts forgiven.
+Cast(FOF)
+Check(Holding("holding") == 0, "two ignores: not held yet")
+Cast(FOF)
+Check(Holding("holding") == 1 and Holding("holding.xuen") == 1 and Holding("holding.fof") == 0, "three ignores: xuen held")
 Check(Suggest() == TP, "held entry skipped")
 total, pct = Stats()
-Check(total == 2 and pct == 100, "ignored casts forgiven once held: " .. total .. "/" .. pct)
+Check(total == 3 and pct == 100, "ignored casts forgiven once held: " .. total .. "/" .. pct)
 Check(Mark() == "|cff40ff40*|r", "held: green marker")
 
 -- 3. Following the APL while holding keeps the hold.
@@ -89,33 +91,66 @@ Cast(XUEN)
 Check(Holding("holding") == 0 and Suggest() == XUEN, "casting the held spell clears the hold")
 
 -- 5. Consecutive only: a cast while Xuen isn't the suggestion resets.
-Cast(TP)                       -- ignore 1
+Cast(FOF)                      -- ignore 1
 S.cd[XUEN] = true              -- xuen on cooldown: tp is the suggestion
 Cast(TP)                       -- not an ignore of xuen: resets the count
 S.cd[XUEN] = nil
-Cast(TP)                       -- ignore 1 again
+Cast(FOF)                      -- ignore 1 again
+Cast(FOF)                      -- ignore 2 in a row
 Check(Holding("holding") == 0, "count reset by a cast while xuen wasn't suggested")
-Cast(TP)                       -- ignore 2 in a row
-Check(Holding("holding.xuen") == 1, "two in a row after the reset: held")
+Cast(FOF)                      -- ignore 3 in a row
+Check(Holding("holding.xuen") == 1, "three in a row after the reset: held")
 
 -- 6. Leaving combat clears holds.
 combat:GetScript("OnEvent")(combat, "PLAYER_REGEN_ENABLED")
 Check(Holding("holding") == 0 and Suggest() == XUEN, "combat end clears the hold")
 Check(Mark() == "", "combat end clears the marker")
 
--- 6b. With hold 3: the 2nd ignore shows the yellow warning marker.
+-- 6b. The 2nd ignore shows the yellow warning marker.
 combat:GetScript("OnEvent")(combat, "PLAYER_REGEN_DISABLED")
-def.groups[1].lists[1].entries[1].hold = 3
-Store.Changed(def)
-rt = ns.GetActiveAPL()
-Cast(TP)
+Cast(FOF)
 Check(Mark() == "", "hold 3, one ignore: no marker")
-Cast(TP)
+Cast(FOF)
 Check(Mark() == "|cffffd000*|r", "hold 3, two ignores: yellow marker")
-Cast(TP)
+Cast(FOF)
 Check(Mark() == "|cff40ff40*|r", "hold 3, three ignores: green marker")
 combat:GetScript("OnEvent")(combat, "PLAYER_REGEN_ENABLED")
-def.groups[1].lists[1].entries[1].hold = 2
+
+-- 6c. Hold fork: a hold line on top also offers the next valid action;
+-- casting that alternative holds the spell from the second cast on the
+-- hold line (the first may already be in flight when the hold spell came
+-- up), and counts as compliant.
+combat:GetScript("OnEvent")(combat, "PLAYER_REGEN_DISABLED")
+local fid, _, _, fentry, falt = ns.EvaluateExpected()
+Check(fid == XUEN and fentry and fentry.hold == 3 and falt == TP, "fork: Xuen (hold) with Tiger Palm as the alternative")
+Cast(TP)
+Check(Holding("holding") == 0, "first alternative cast: not held (may be a press in flight)")
+Cast(TP)
+Check(Holding("holding.xuen") == 1, "second alternative cast in a row: held")
+Check(select(5, ns.BuildStatsSummary()) == true, "the alternative cast counts as compliant")
+local nid, _, _, nentry, nalt = ns.EvaluateExpected()
+Check(nid == TP and nalt == nil, "once held: no fork, Tiger Palm suggested")
+combat:GetScript("OnEvent")(combat, "PLAYER_REGEN_ENABLED")
+-- An ignore streak, then the alternative: held, both forgiven.
+combat:GetScript("OnEvent")(combat, "PLAYER_REGEN_DISABLED")
+Cast(FOF)
+Check(Holding("holding") == 0, "one ignore: not held")
+Cast(TP)
+Check(Holding("holding.xuen") == 1, "ignore then alternative: held")
+combat:GetScript("OnEvent")(combat, "PLAYER_REGEN_ENABLED")
+-- The edge case: Tiger Palm already on its way as Xuen comes up, then Xuen.
+combat:GetScript("OnEvent")(combat, "PLAYER_REGEN_DISABLED")
+Cast(TP)
+Cast(XUEN)
+Check(Holding("holding") == 0, "alternative once, then the hold spell: never held")
+combat:GetScript("OnEvent")(combat, "PLAYER_REGEN_ENABLED")
+-- No hold set: no fork.
+def.groups[1].lists[1].entries[1].hold = nil
+Store.Changed(def)
+rt = ns.GetActiveAPL()
+local _, _, _, _, noAlt = ns.EvaluateExpected()
+Check(noAlt == nil, "no hold setting: no fork")
+def.groups[1].lists[1].entries[1].hold = 3
 Store.Changed(def)
 rt = ns.GetActiveAPL()
 
@@ -131,18 +166,63 @@ Check(Holding("holding") == 0 and Suggest() == XUEN, "no hold setting: never hel
 def.groups[1].lists[1].entries[1].hold = 0
 Store.Changed(def)
 local errs = Engine.GetRuntime(def).errors
-Check(#errs == 1 and errs[1]:find("hold must be"), "hold 0 reported: " .. tostring(errs[1]))
+Check(#errs == 1 and errs[1]:find("hold must be a whole number of 3"), "hold 0 reported: " .. tostring(errs[1]))
+-- Holds of 1 and 2 (saved before the minimum) are raised to 3.
 def.groups[1].lists[1].entries[1].hold = 2
 Store.Changed(def)
+errs = Engine.GetRuntime(def).errors
+Check(#errs == 0 and def.groups[1].lists[1].entries[1].hold == 3, "saved hold 2 raised to 3")
+def.groups[1].lists[1].entries[1].hold = 1
+Store.Changed(def)
+Engine.GetRuntime(def)
+Check(def.groups[1].lists[1].entries[1].hold == 3, "saved hold 1 raised to 3")
 
 -- 9. Export/import keeps hold.
 local back = ns.Exchange.Import(ns.Exchange.Export(def))
-Check(back and back.groups[1].lists[1].entries[1].hold == 2 and back.groups[1].lists[1].entries[2].hold == nil,
+Check(back and back.groups[1].lists[1].entries[1].hold == 3 and back.groups[1].lists[1].entries[2].hold == nil,
     "hold survives export/import")
 
 -- 10. Renaming a short name rewrites holding.<name>.
 def.groups[1].lists[1].entries[2].when = "!holding.xuen"
 Store.RenameBlock(def, "name", "xuen", "white_tiger")
 Check(def.groups[1].lists[1].entries[2].when == "!holding.white_tiger", "rename rewrites holding.<name>")
+
+-- 11. Free casts: no stats entry, no hold ignore, no cast count, not the
+-- last cast; renames and export/import keep them; unknown names reported.
+local KICK = 116705
+def.names.kick = KICK
+Check(Store.AddFreeCast(def, "kick") and not Store.AddFreeCast(def, "kick"), "free cast added once")
+rt = ns.GetActiveAPL()
+Check(#rt.errors == 0 and Engine.IsFreeCast(rt, KICK) and not Engine.IsFreeCast(rt, TP), "free cast compiled")
+def.groups[1].lists[1].entries[2].when = nil
+Store.Changed(def)
+rt = ns.GetActiveAPL()
+combat:GetScript("OnEvent")(combat, "PLAYER_REGEN_DISABLED")
+wipe(S.cd)
+Check(Suggest() == XUEN, "Xuen suggested")
+Cast(FOF)                                  -- ignore 1
+local total0 = Stats()
+local casts0, last0 = ns.combatCasts, ns.lastCastSpellID
+Cast(KICK)
+Cast(KICK)
+Cast(KICK)                                 -- would be ignore 3 (held) if counted
+Check(Stats() == total0, "free casts add no stats entries")
+Check(Holding("holding") == 0, "free casts don't count as ignoring a hold line")
+Check(ns.combatCasts == casts0 and ns.lastCastSpellID == last0, "free casts don't count as casts or the last cast")
+Cast(FOF)                                  -- ignore 2: the streak survived the kicks
+Check(Holding("holding") == 0, "two real ignores: not held yet")
+Cast(FOF)                                  -- ignore 3
+Check(Holding("holding.white_tiger") == 1, "ignore streak continues across free casts")
+combat:GetScript("OnEvent")(combat, "PLAYER_REGEN_ENABLED")
+Store.RenameBlock(def, "name", "kick", "spear_hand")
+Check(def.freeCasts[1] == "spear_hand", "rename rewrites free casts")
+back = ns.Exchange.Import(ns.Exchange.Export(def))
+Check(back and back.freeCasts and back.freeCasts[1] == "spear_hand", "free casts survive export/import")
+def.freeCasts[2] = "nope"
+Store.Changed(def)
+rt = ns.GetActiveAPL()
+Check(rt.errors[1] and rt.errors[1]:find("free casts", 1, true), "unknown free cast reported: " .. tostring(rt.errors[1]))
+def.freeCasts[2] = nil
+Store.Changed(def)
 
 print_real(fails == 0 and "ALL PASS" or (fails .. " failures"))
