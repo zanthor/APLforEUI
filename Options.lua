@@ -149,73 +149,102 @@ local function BuildStatusWidgetPage(parent, yOffset)
     return math.abs(y)
 end
 
--- CDM glow (Glow.lua): glows the suggested spell's Cooldown Manager icon.
-local function BuildCDMGlowPage(parent, yOffset)
+-- Glows (Glow.lua): the suggested spell glows on its Cooldown Manager icon
+-- and/or its action bar buttons. One section per target, same controls.
+-- extraRight: optional { cfg, build(row) } filling the opacity row's right
+-- half (the action bars' bar picker).
+local function BuildGlowSection(parent, y, key, title, enabledTip, extraRight)
     local W = EllesmereUI.Widgets
-    local y = yOffset
     local _, h
 
-    _, h = W:SectionHeader(parent, "CDM GLOW", y); y = y - h
+    _, h = W:SectionHeader(parent, title, y); y = y - h
 
     local function Cfg(k) return DB()[k] end
-    local function Set(k, v) DB()[k] = v; ns.ApplyCDMGlow() end
-    local off = function() return not ns.CDMGlowEnabled() end
+    local function Set(k, v) DB()[k] = v; ns.ApplyGlows() end
+    local off = function() return not ns.GlowEnabled(key) end
 
     local styleValues, styleOrder = {}, {}
     local styles = EllesmereUI.Glows and EllesmereUI.Glows.STYLES or {}
-    for _, idx in ipairs(ns.CDM_GLOW_STYLES) do
+    for _, idx in ipairs(ns.GLOW_STYLES_SAFE) do
         if styles[idx] then
             styleValues[idx] = styles[idx].name
             styleOrder[#styleOrder + 1] = idx
         end
     end
-    local function Style() return Cfg("cdmGlowStyle") or 6 end
+    local function Style() return Cfg(key .. "Style") or 6 end
     local function IsBlackout() return styles[Style()] and styles[Style()].solidFill end
 
     _, h = W:DualRow(parent, y,
-        { type = "toggle", text = "Enabled",
-          tooltip = "Glow the suggested spell's icon in the Cooldown Manager, in combat. Works for spells tracked by the Cooldown Manager (Essential and Utility bars).",
-          getValue = function() return ns.CDMGlowEnabled() end,
+        { type = "toggle", text = "Enabled", tooltip = enabledTip,
+          getValue = function() return ns.GlowEnabled(key) end,
           setValue = function(v)
-              if v then Set("cdmGlow", nil) else Set("cdmGlow", false) end
+              ns.SetGlowEnabled(key, v)
               EllesmereUI:RefreshPage()
           end },
         { type = "dropdown", text = "Glow Style", values = styleValues, order = styleOrder,
           tooltip = "Only styles that keep animating in restricted combat are offered.",
           disabled = off, disabledTooltip = "Enabled",
           getValue = Style,
-          setValue = function(v) Set("cdmGlowStyle", v); EllesmereUI:RefreshPage() end })
+          setValue = function(v) Set(key .. "Style", v); EllesmereUI:RefreshPage() end })
     y = y - h
 
     _, h = W:DualRow(parent, y,
         { type = "toggle", text = "Custom Color",
           tooltip = "Off: the style's own colors (black for Blackout).",
           disabled = off, disabledTooltip = "Enabled",
-          getValue = function() return Cfg("cdmGlowColor") ~= nil end,
+          getValue = function() return Cfg(key .. "Color") ~= nil end,
           setValue = function(v)
-              Set("cdmGlowColor", v and { r = 1, g = 0.82, b = 0 } or nil)
+              if v then Set(key .. "Color", { r = 1, g = 0.82, b = 0 }) else Set(key .. "Color", nil) end
               EllesmereUI:RefreshPage()
           end },
         { type = "colorpicker", text = "Glow Color", hasAlpha = false,
-          disabled = function() return off() or Cfg("cdmGlowColor") == nil end,
+          disabled = function() return off() or Cfg(key .. "Color") == nil end,
           disabledTooltip = "Custom Color",
           getValue = function()
-              local c = Cfg("cdmGlowColor") or { r = 1, g = 0.82, b = 0 }
+              local c = Cfg(key .. "Color") or { r = 1, g = 0.82, b = 0 }
               return c.r, c.g, c.b
           end,
-          setValue = function(r, g, b) Set("cdmGlowColor", { r = r, g = g, b = b }) end })
+          setValue = function(r, g, b) Set(key .. "Color", { r = r, g = g, b = b }) end })
     y = y - h
 
     -- Always shown; only unlocked for the Blackout style.
-    _, h = W:DualRow(parent, y,
+    local row
+    row, h = W:DualRow(parent, y,
         { type = "slider", text = "Blackout Opacity", min = 0.1, max = 1.0, step = 0.05,
           disabled = function() return off() or not IsBlackout() end,
           disabledTooltip = "This option only applies to the Blackout glow style.",
-          getValue = function() return Cfg("cdmGlowAlpha") or 0.5 end,
-          setValue = function(v) Set("cdmGlowAlpha", v) end },
-        { type = "spacer" })
-    y = y - h
+          getValue = function() return Cfg(key .. "Alpha") or 0.5 end,
+          setValue = function(v) Set(key .. "Alpha", v) end },
+        extraRight and extraRight.cfg or { type = "spacer" })
+    if extraRight then extraRight.build(row) end
+    return y - h
+end
 
+-- Which action bars glow: a checkbox dropdown (EUI's own), toggling at
+-- once, in the right half of the action bars' opacity row.
+local GLOW_BARS_RIGHT = {
+    cfg = { type = "label", text = "Glow On Bars", tooltip = "Buttons on unchecked bars never glow." },
+}
+function GLOW_BARS_RIGHT.build(row)
+    if not (EllesmereUI.IsSearchPrebuild and EllesmereUI.IsSearchPrebuild()) and EllesmereUI.BuildVisOptsCBDropdown then
+        local items = {}
+        for _, bar in ipairs(ns.GLOW_BARS) do items[#items + 1] = { key = bar.n, label = "Bar " .. bar.n } end
+        local dd = EllesmereUI.BuildVisOptsCBDropdown(row, 220, row:GetFrameLevel() + 2, items,
+            function(n) return ns.GlowBarEnabled(n) end,
+            function(n, on) ns.SetGlowBarEnabled(n, on) end,
+            nil, nil, nil, nil, nil,
+            { disabled = function() return not ns.GlowEnabled("barGlow") end, disabledTooltip = "Enabled" })
+        dd:SetPoint("RIGHT", row, "RIGHT", -20, 0)
+    end
+end
+
+local function BuildGlowsPage(parent, yOffset)
+    local y = yOffset
+    y = BuildGlowSection(parent, y, "cdmGlow", "COOLDOWN MANAGER",
+        "Glow the suggested spell's icon in the Cooldown Manager, in combat. Works for spells tracked by the Cooldown Manager (Essential and Utility bars).")
+    y = BuildGlowSection(parent, y, "barGlow", "ACTION BARS",
+        "Glow the suggested spell's action bar buttons (and macros that cast it), in combat. Turn off Blizzard's Assisted Highlight so two buttons don't glow at once.",
+        GLOW_BARS_RIGHT)
     return math.abs(y)
 end
 
@@ -393,16 +422,22 @@ if EllesmereUI and EllesmereUI.RegisterPlugin then
                 onModuleLeave = function() ns.EditorKit.HideSuggest() end,
             },
             {
+                key = "Glows",
+                title = "Glows",
+                description = "Glow the suggested spell on its Cooldown Manager icon and its action bar buttons.",
+                pages = { "Glows" },
+                buildPage = function(_, parent, yOffset)
+                    return BuildGlowsPage(parent, yOffset)
+                end,
+            },
+            {
                 key = "Widgets",
                 title = "Widgets",
                 description = "Standalone on-screen displays for the ST/AOE compliance stats and the live APL suggestion.",
-                pages = { "Status Widget", "Suggestion Widget", "CDM Glow" },
+                pages = { "Status Widget", "Suggestion Widget" },
                 buildPage = function(pageName, parent, yOffset)
                     if pageName == "Suggestion Widget" then
                         return BuildSuggestionWidgetPage(parent, yOffset)
-                    end
-                    if pageName == "CDM Glow" then
-                        return BuildCDMGlowPage(parent, yOffset)
                     end
                     return BuildStatusWidgetPage(parent, yOffset)
                 end,

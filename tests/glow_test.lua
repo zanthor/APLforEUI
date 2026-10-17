@@ -29,6 +29,11 @@ EllesmereUI = {
     Widgets = {},
 }
 function EllesmereUI:RefreshPage() end
+local cbDD
+function EllesmereUI.BuildVisOptsCBDropdown(parent, w, level, items, get, set, _, _, _, _, _, opts)
+    cbDD = { items = items, get = get, set = set, opts = opts }
+    return CreateFrame("Frame", nil, parent), function() end
+end
 function EllesmereUI.Widgets:SectionHeader() return CreateFrame("Frame"), 30 end
 function EllesmereUI.Widgets:DualRow(_, _, l, r)
     for _, cfg in ipairs({ l or false, r or false }) do if cfg then rows[#rows + 1] = cfg end end
@@ -129,18 +134,18 @@ Check(Last().op == "start" and Last().wrapper == xuenOverlay, "same overlay reus
 
 -- Settings: style change restarts; Blackout passes its opacity.
 ns.DB().cdmGlowStyle = 8
-ns.ApplyCDMGlow()
+ns.ApplyGlows()
 Check(Last().op == "start" and Last().style == 8 and Last().opts.alpha == 0.5, "Blackout with default opacity")
 ns.DB().cdmGlowColor = { r = 0.2, g = 0.4, b = 0.6 }
-ns.ApplyCDMGlow()
+ns.ApplyGlows()
 Check(Last().r == 0.2 and not Last().opts.untinted, "custom color passed")
 
 -- Disabled: glow stops and the ticker ends.
 ns.DB().cdmGlow = false
-ns.ApplyCDMGlow()
+ns.ApplyGlows()
 Check(Last().op == "stop" and tickFn == nil, "disabled: glow off, no ticker")
 ns.DB().cdmGlow = nil
-ns.ApplyCDMGlow()
+ns.ApplyGlows()
 Check(Last().op == "start" and tickFn ~= nil, "re-enabled in combat: glow back")
 
 -- Leaving combat stops it.
@@ -156,17 +161,126 @@ Check(#calls == before and tickFn == nil, "without EllesmereUI.Glows the driver 
 Fire("PLAYER_REGEN_ENABLED")
 EllesmereUI.Glows = saved
 
--- Widgets > CDM Glow page.
+-- Action bar glow: off by default; buttons found by slot and by macro.
+local BAR = {}
+local function Button(slot)
+    local b = CreateFrame("Button")
+    b.GetAttribute = function(_, k) if k == "action" then return slot end end
+    b.IsVisible = function() return true end
+    b.GetWidth = function() return 36 end
+    b.GetHeight = function() return 36 end
+    return b
+end
+EABButton1 = Button(1)                  -- Bar 1: Xuen
+EABButton3 = Button(3)                  -- Bar 1: Tiger Palm
+EABButton62 = Button(62)                -- Bar 2: a macro casting Xuen
+EABButton63 = Button(63)                -- Bar 2: an item macro (#showtooltip item:...)
+MultiBarBottomLeftButton1 = Button(61)  -- Bar 2 (Blizzard): Xuen
+ActionButton12 = Button(12)             -- Bar 1: the assisted-combat button
+C_ActionBar = {
+    FindSpellActionButtons = function(id)
+        if id == XUEN then return { 1, 61, 12 } end
+        if id == TP then return { 3 } end
+        return {}
+    end,
+    IsAssistedCombatAction = function(slot) return slot == 12 end,
+}
+GetActionInfo = function(slot)
+    if slot == 62 then return "macro", XUEN, "spell" end
+    if slot == 63 then return "macro", 241289, "item" end
+    return "spell", 0
+end
+-- Would match anything if an item macro's ID were wrongly used as an index.
+GetMacroSpell = function() return XUEN end
+local function GlowingOn()
+    local parents = {}
+    for _, c in ipairs(calls) do
+        local p = c.wrapper:GetParent()
+        if c.op == "start" then parents[p] = true elseif c.op == "stop" then parents[p] = nil end
+    end
+    return parents
+end
+ns.DB().cdmGlowStyle, ns.DB().cdmGlowColor = nil, nil
+wipe(S.cd)
+Fire("PLAYER_REGEN_DISABLED")
+local on = GlowingOn()
+Check(on[xuenItem] and not on[EABButton1], "action bar glow off by default (CDM still on)")
+ns.SetGlowEnabled("barGlow", true)
+Check(ns.DB().barGlow == true, "bar glow on stored")
+on = GlowingOn()
+Check(on[EABButton1] and on[MultiBarBottomLeftButton1], "Xuen glows on EUI and Blizzard bar buttons")
+Check(on[EABButton62], "macro casting Xuen glows")
+Check(not on[EABButton63], "item macro never glows")
+Check(not on[ActionButton12], "assisted-combat button never glows")
+Check(not on[EABButton3], "other spells' buttons don't glow")
+Check(on[xuenItem], "CDM icon still glows alongside")
+-- Separate style per target.
+ns.DB().barGlowStyle = 7
+ns.ApplyGlows()
+local barStyle, cdmStyle
+for _, c in ipairs(calls) do
+    if c.op == "start" and c.wrapper:GetParent() == EABButton1 then barStyle = c.style end
+    if c.op == "start" and c.wrapper:GetParent() == xuenItem then cdmStyle = c.style end
+end
+Check(barStyle == 7 and cdmStyle == 6, "bar and CDM glows keep their own style: " .. tostring(barStyle) .. "/" .. tostring(cdmStyle))
+-- Per-bar filter: Bar 1 off leaves the Bar 2 buttons glowing.
+ns.SetGlowBarEnabled(1, false)
+on = GlowingOn()
+Check(not on[EABButton1] and on[MultiBarBottomLeftButton1] and on[EABButton62], "Bar 1 off: only Bar 2 glows")
+Check(ns.DB().barGlowBars[1] == false, "bar off stored")
+ns.SetGlowBarEnabled(1, true)
+Check(ns.DB().barGlowBars == nil, "all bars on stored as default")
+on = GlowingOn()
+Check(on[EABButton1], "Bar 1 back")
+
+-- CDM off, bars on: only bars glow.
+ns.SetGlowEnabled("cdmGlow", false)
+on = GlowingOn()
+Check(on[EABButton1] and not on[xuenItem], "CDM off, bars on")
+Check(ns.DB().cdmGlow == false, "CDM off stored")
+ns.SetGlowEnabled("cdmGlow", true)
+Check(ns.DB().cdmGlow == nil, "CDM back on stored as default")
+ns.SetGlowEnabled("barGlow", false)
+Check(ns.DB().barGlow == nil, "bar off stored as default")
+on = GlowingOn()
+Check(not on[EABButton1], "bar glow off again")
+Fire("PLAYER_REGEN_ENABLED")
+
+-- Glows page: its own module between APL and Widgets, one section per target.
 local mod
-for _, m in ipairs(plugin.modules) do if m.key == "Widgets" then mod = m end end
-Check(mod and mod.pages[3] == "CDM Glow", "CDM Glow tab on the Widgets module")
+for _, m in ipairs(plugin.modules) do if m.key == "Glows" then mod = m end end
+Check(mod and mod.pages[1] == "Glows", "Glows module")
+for _, m in ipairs(plugin.modules) do
+    if m.key == "Widgets" then
+        for _, pg in ipairs(m.pages) do Check(pg ~= "CDM Glow", "CDM Glow tab gone from Widgets") end
+    end
+end
 local function Build()
     rows = {}
-    return mod.buildPage("CDM Glow", CreateFrame("Frame"), -10)
+    return mod.buildPage("Glows", CreateFrame("Frame"), -10)
 end
-local function Row(text) for _, r in ipairs(rows) do if r.text == text then return r end end end
-ns.DB().cdmGlowStyle, ns.DB().cdmGlowColor = nil, nil
+-- Rows of the first (CDM) section come first; the second section's follow.
+local function Row(text, nth)
+    nth = nth or 1
+    for _, r in ipairs(rows) do
+        if r.text == text then
+            nth = nth - 1
+            if nth == 0 then return r end
+        end
+    end
+end
 Check(Build() > 0, "page builds")
+Check(Row("Enabled", 1).getValue() == true and Row("Enabled", 2).getValue() == false,
+    "CDM on, action bars off by default")
+Row("Enabled", 2).setValue(true)
+Check(ns.GlowEnabled("barGlow"), "action bars switch on from the page")
+Check(Row("Glow On Bars") ~= nil and cbDD and #cbDD.items == 10 and cbDD.items[10].label == "Bar 10", "bar picker lists Bar 1-10")
+Check(cbDD.get(3) == true and cbDD.opts.disabled() == false, "bars on by default; picker unlocked while enabled")
+cbDD.set(3, false)
+Check(ns.GlowBarEnabled(3) == false and cbDD.get(3) == false, "unchecking a bar switches it off")
+cbDD.set(3, true)
+Row("Enabled", 2).setValue(false)
+Check(cbDD.opts.disabled() == true, "picker locked while the action bar glow is off")
 local styleRow = Row("Glow Style")
 local offered = {}
 for _, v in ipairs(styleRow.order) do offered[#offered + 1] = styleRow.values[v] end

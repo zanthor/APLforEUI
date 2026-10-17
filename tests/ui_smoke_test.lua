@@ -88,7 +88,7 @@ end
 assert(plugin, "plugin not registered")
 local mod = plugin.modules[1]
 Check(mod.key == "APL" and mod.pages[3] == "Building Blocks", "APL module with three tabs")
-Check(plugin.modules[2].title == "Widgets", "Widgets module second")
+Check(plugin.modules[2].title == "Glows" and plugin.modules[3].title == "Widgets", "Glows between APL and Widgets")
 
 local parent = Stub()
 local function Reset() rec.rows, rec.dropdowns, rec.buttons, rec.toggles = {}, {}, {}, {} end

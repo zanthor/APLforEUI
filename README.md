@@ -15,7 +15,7 @@ APL for EUI is designed to replace the default client's **Assisted Highlight** w
 ## What it does
 
 - **Suggests your next cast.** A movable **Suggestion Widget** shows the spell to press, with its icon and the entry label (e.g. `ST3`). It can optionally speak a short name over text-to-speech.
-- **Glows the Cooldown Manager icon.** The suggested spell's icon in EllesmereUI's Cooldown Manager glows, using EUI's own glow styles.
+- **Glows the right button.** The suggested spell glows on its Cooldown Manager icon (on by default) and, optionally, on its action bar buttons, including macros that cast it. Both use EUI's own glow styles, set separately. If you use the action bar glow, turn off Blizzard's Assisted Highlight so two buttons don't glow at once.
 - **Tracks compliance.** A **Status Widget** (and a LibDataBroker feed for EUI DataBars) shows your last 60 seconds: casts, the percentage that matched the suggestion, and broken Combo Strikes for Windwalker.
 - **Is fully editable in game.** APLs, lists, entries, conditions, timers, counters and variables are all edited in the EllesmereUI options panel, with no Lua.
 
@@ -63,9 +63,10 @@ The **Discovered** section then adds any of it to your APL in one click. Buffs w
 ## Getting started
 
 1. Install the addon, `/reload`, and open EllesmereUI's options. **APL for EUI** has its own section in the sidebar.
-2. **Widgets:** enable the **Suggestion Widget** and/or **Status Widget**, and set up the **CDM Glow**. Hold Shift and drag a widget to move it.
-3. **APL:** if your spec has a built-in APL it's already running. Built-ins are read-only; click **Duplicate to Edit** to make your own copy.
-4. **Track the buffs your APL uses in the Cooldown Manager.** The defaults list theirs at the top of their files, e.g. Howl of the Pack Leader, Nature's Ally, Beast Cleave and Cobra Fang for Beast Mastery.
+2. **Glows:** set the glow style for the Cooldown Manager and, if you want it, switch on the action bar glow.
+3. **Widgets:** enable the **Suggestion Widget** and/or **Status Widget**. Hold Shift and drag a widget to move it.
+4. **APL:** if your spec has a built-in APL it's already running. Built-ins are read-only; click **Duplicate to Edit** to make your own copy.
+5. **Track the buffs your APL uses in the Cooldown Manager.** The defaults list theirs at the top of their files, e.g. Howl of the Pack Leader, Nature's Ally, Beast Cleave and Cobra Fang for Beast Mastery.
 
 ## How it copes with combat secrecy
 
@@ -88,7 +89,7 @@ Some guide lines can't be expressed exactly and are approximated. Each default A
 | `/apl debug <label>` | Speak (TTS) whenever entry `<label>` is suggested; `/apl debug clear` to stop |
 | `/apl secrets` | Show which addon restrictions are active and what is secret |
 | `/apl cdm` | List the Cooldown Manager icons the glow can see |
-| `/apl glow` | Diagnose the CDM glow |
+| `/apl glow` | Diagnose the glows (Cooldown Manager and action bars) |
 | `/apl melee` | Show what the target count sees, per nameplate |
 | `/apl chat` | Toggle per-cast debug output in chat |
 

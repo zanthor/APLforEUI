@@ -7,9 +7,10 @@ hard-coded Windwalker Monk APL to user-editable APLs for any spec (plan:
 EllesmereUI Cooldown Manager (`OptionalDeps`), so it must also work without them.
 
 - EllesmereUI dependency: stock release only (no custom build). The APL
-  section uses `EllesmereUI.RegisterPlugin`; the CDM glow (`Glow.lua`) finds
+  section uses `EllesmereUI.RegisterPlugin`; the glows (`Glow.lua`) find
   icons through Blizzard's Essential/Utility viewer item frames (which EUI's
-  CDM restyles) and draws with `EllesmereUI.Glows`. Follow EUI's rules for
+  CDM restyles) and action buttons through C_ActionBar slots, and draw with
+  `EllesmereUI.Glows`. Action buttons are secure: overlays only. Follow EUI's rules for
   those frames (EllesmereUICdmHooks.lua): never reparent, rescale, hide or
   show them, never write keys onto them; use our own overlay frames.
 - Code (TOC load order): `Core.lua` (shared helpers, `ns.slashCommands`),
