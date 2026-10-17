@@ -2,7 +2,7 @@
 ## Title: APL for EUI
 ## Notes: Suggests the next cast from a configurable APL and tracks how closely you follow it
 ## Author: zanthor
-## Version: 0.10.0
+## Version: 0.10.1
 ## OptionalDeps: EllesmereUI, EllesmereUICooldownManager
 ## SavedVariables: APLforEUIDB
 

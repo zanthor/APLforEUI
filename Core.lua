@@ -97,7 +97,13 @@ end
 -- secret), so idle mobs and unattacked dummies in range don't turn single
 -- target into AOE -- which matters most for ranged range spells. Plain
 -- booleans the whole way, never secret.
+-- /apl targets N: a fixed target count for testing (training dummies drop
+-- out of combat between hits, so nameplate counting undercounts them).
+-- Session only: a reload goes back to counting nameplates.
+ns.targetOverride = nil
+
 function ns.GetTargetCount(rangeSpellID)
+    if ns.targetOverride then return ns.targetOverride end
     local count = 0
     if not rangeSpellID then
         local apl = ns.GetActiveAPL()

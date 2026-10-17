@@ -33,7 +33,26 @@ ns.slashCommands.melee = function()
             end
         end
     end
-    print("APL debug: GetTargetCount() = " .. ns.GetTargetCount())
+    print("APL debug: GetTargetCount() = " .. ns.GetTargetCount()
+        .. (ns.targetOverride and " (fixed by /apl targets)" or ""))
+end
+
+-- /apl targets N: fix the target count (testing on dummies); /apl targets
+-- with no number (or "auto") counts nameplates again.
+ns.slashCommands.targets = function(rest)
+    rest = (rest or ""):lower()
+    if rest == "" or rest == "auto" or rest == "off" then
+        ns.targetOverride = nil
+        print("APL for EUI: target count back to automatic (nameplates in range and in combat).")
+        return
+    end
+    local n = tonumber(rest)
+    if not n or n < 1 or n ~= math.floor(n) then
+        print("APL for EUI: usage: /apl targets <number of 1 or more>, or /apl targets to go back to automatic.")
+        return
+    end
+    ns.targetOverride = n
+    print("APL for EUI: target count fixed at " .. n .. " until /apl targets or a reload.")
 end
 
 -- Which addon restrictions are active right now, and whether the data this

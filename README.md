@@ -92,6 +92,7 @@ Some guide lines can't be expressed exactly and are approximated. Each default A
 | `/apl cdm` | List the Cooldown Manager icons the glow can see |
 | `/apl glow` | Diagnose the glows (Cooldown Manager and action bars) |
 | `/apl melee` | Show what the target count sees, per nameplate |
+| `/apl targets <N>` | Fix the target count at N for testing (e.g. on training dummies, which drop out of combat between hits); `/apl targets` goes back to automatic. Lasts until a reload |
 | `/apl chat` | Toggle per-cast debug output in chat |
 
 ## Contributing a default APL

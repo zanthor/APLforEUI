@@ -272,4 +272,18 @@ do
     S.talents[WDP] = nil
 end
 
+-- /apl targets N fixes the target count (dummies); /apl targets clears it.
+do
+    local saved = S.targets
+    S.targets = 1
+    SlashCmdList.APLFOREUI("targets 4")
+    Check(ns.GetTargetCount() == 4, "/apl targets 4: fixed at 4")
+    SlashCmdList.APLFOREUI("targets 0")
+    SlashCmdList.APLFOREUI("targets abc")
+    Check(ns.GetTargetCount() == 4, "bad counts refused")
+    SlashCmdList.APLFOREUI("targets")
+    Check(ns.GetTargetCount() == 1 and ns.targetOverride == nil, "/apl targets: back to nameplates")
+    S.targets = saved
+end
+
 print_real(fails == 0 and "ALL PASS" or (fails .. " failures"))
