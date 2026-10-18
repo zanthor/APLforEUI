@@ -4,10 +4,11 @@
 
 APL for EUI is designed to replace the default client's **Assisted Highlight** with a rotation helper that follows a real-world APL. Instead of Blizzard's generic "press this next" hint, it follows a priority list you can see, edit, share and tune for your spec, hero talents and content. It also shows how closely you're following it.
 
-> **Status: 0.12, in active development.** Default APLs exist for only three specs so far:
+> **Status: 0.13, in active development.** Default APLs exist for only four specs so far:
 > - **Windwalker Monk**, Conduit of the Celestials
 > - **Beast Mastery Hunter**, Pack Leader
 > - **Shadow Priest**, Archon (new; still being tuned in game)
+> - **Elemental Shaman**, Farseer, Raid and Mythic+ (new; working well in early testing)
 >
 > See [Default APLs](#default-apls) for how each one is doing. Every other spec works too, but you build its APL yourself with the in-game editor. Data harvesting (below) does most of the groundwork.
 
@@ -77,6 +78,10 @@ New, and still being tuned. In limited testing it already outperforms Blizzard's
 - **Spreading DoTs across many targets** isn't modelled. The APL can't tell which mobs still need a DoT, so in AoE it runs the damage priority and leaves dotting to you.
 - **Target health is secret**, so Shadow Word: Death's execute window isn't in the APL.
 
+### Elemental Shaman (Farseer)
+
+New, and working well in early testing. Built from Method's guide plus an in-game harvest, as two built-ins with the guide's openers and target-count lists: **Elemental - Farseer Raid** (the spec's default) and **Elemental - Farseer M+**. Pick yours on the APL page. Stormkeeper is holdable (`hold = 3`), and Ascendance always follows Stormkeeper, so holding Stormkeeper holds Ascendance too. Flame Shock has the same DoT limits as Shadow's Vampiric Touch: it's timed from your casts, and whether it's on your current target is read through the Cooldown Manager. Maelstrom is secret in combat, so the guide's "spend before capping Maelstrom" rule is left out; spenders are suggested whenever they're castable.
+
 ## Requirements
 
 - **World of Warcraft: Midnight** (Interface 120100).
@@ -136,7 +141,7 @@ Please don't guess spell IDs. Midnight has many spells that share a name but use
   lua tests/bm_test.lua .
   EAGER=1 lua tests/parity_sim.lua .
   ```
-  The other suites in [`tests/`](tests/) run the same way: `ui_smoke_test`, `editor_logic_test`, `exchange_test`, `groups_test`, `holds_test`, `glow_test`, `harvest_test` and `shadow_test`.
+  The other suites in [`tests/`](tests/) run the same way: `ui_smoke_test`, `editor_logic_test`, `exchange_test`, `groups_test`, `holds_test`, `glow_test`, `harvest_test`, `shadow_test` and `elemental_test`.
 - Design notes and decisions: [`design.md`](design.md).
 
 ## Author and license

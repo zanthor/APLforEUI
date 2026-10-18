@@ -2,7 +2,7 @@
 ## Title: APL for EUI
 ## Notes: Suggests the next cast from a configurable APL and tracks how closely you follow it
 ## Author: zanthor
-## Version: 0.12.0
+## Version: 0.13.0
 ## OptionalDeps: EllesmereUI, EllesmereUICooldownManager
 ## SavedVariables: APLforEUIDB
 
@@ -15,6 +15,7 @@ Harvest.lua
 Defaults\Monk_Windwalker.lua
 Defaults\Hunter_BeastMastery.lua
 Defaults\Priest_Shadow.lua
+Defaults\Shaman_Elemental.lua
 Tracking.lua
 Widgets.lua
 Glow.lua

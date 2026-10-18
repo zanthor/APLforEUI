@@ -16,7 +16,7 @@ class/spec, edited in game inside the EllesmereUI plugin section.
 | Burst / conditional lists | List sets that take priority while a condition holds (e.g. Courage of the White Tiger or HotJS up). Phase 5, same mechanism as openers. |
 | Holding cooldowns | An entry can be marked holdable: ignoring it for X casts sets a "holding" state that conditions can read; casting it (or leaving combat) clears it. Phase 6. |
 | Combo Strikes | Generic APL option "never suggest the last cast"; only the Windwalker APL turns it on. |
-| Spec support | A spec is "supported" when we ship a default APL for it. Windwalker Monk; Beast Mastery Hunter (Pack Leader) from a harvest + Method's guide, Dark Ranger pending a harvest with that hero tree; Shadow Priest (Archon) from a harvest + Method's guide. No Lua per spec: everything is configuration (below). The Lua spec registry was removed once Windwalker reached parity; re-add a hook only if something truly cannot be modelled. |
+| Spec support | A spec is "supported" when we ship a default APL for it. Windwalker Monk; Beast Mastery Hunter (Pack Leader) from a harvest + Method's guide, Dark Ranger pending a harvest with that hero tree; Shadow Priest (Archon) and Elemental Shaman (Farseer, Raid and M+) from a harvest + Method's guide. No Lua per spec: everything is configuration (below). The Lua spec registry was removed once Windwalker reached parity; re-add a hook only if something truly cannot be modelled. |
 | Shipped defaults | Default APLs, plus a library of ready-made timers, counters and variables (as we sort them out) that the editor copies into an APL. Copies, not references, so an APL stays self-contained. |
 | Import/Export | Wanted. Format still open (see Open items). |
 | Saved data | Per account (`APLforEUIDB`). |
@@ -152,6 +152,13 @@ APLforEUIDB.apls[id] = <user APL>;  APLforEUIDB.activeAPL[specID] = id
    import always adds a new APL, never replaces one.
 5. **List groups: openers and conditional lists.** DONE. See "Phase 5" below.
 6. **Holding cooldowns.** DONE. See "Phase 6" below.
+7. **Auto-select the APL.** PLANNED. Pick the running APL from context
+   instead of only the per-spec choice: content type (Mythic+ key, raid,
+   delve, open world), the talents taken (hero tree, key talents) and
+   similar signals. Specs with several built-ins (Shadow with/without the
+   4-piece, Elemental Raid/M+) are the first users. Open questions: rule
+   format (per APL "use when" conditions vs. a per-spec mapping), what
+   wins when several match, and keeping a manual override.
 
 ## Phase 5: list groups (openers, burst windows)
 
