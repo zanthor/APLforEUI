@@ -127,4 +127,47 @@ Check(id == VT and label == "P3", "switched to an undotted target: Vampiric Touc
 S.buffs[VT] = true
 Check(Suggest() ~= VT, "dotted target, fresh timer: no Vampiric Touch")
 
+-- Void Volley is seen through the button too: Voidform turned into Void
+-- Volley (an override) without the Voidform buff read.
+local VV = 999001                              -- test stand-in for Void Volley's ID
+S.cd[VF] = nil; S.buffs[VF_BUFF] = nil; S.buffs[MFI] = nil
+S.cd[MB] = true; S.charges[TS] = 0; S.insanity = 0
+Engine.OnCast(rt, SWM)
+S.overrides[VF] = VV
+id, label = Suggest()
+Check(id == VV and label == "P12", "Void Volley from the overridden button (" .. tostring(label) .. ")")
+S.overrides[VF] = nil
+id, label = Suggest()
+Check(id == VF and label == "P5", "plain Voidform button: Voidform (" .. tostring(label) .. ")")
+
+-- The 4-piece built-in: Mind Blast, Tentacle Slam, Halo, Void Volley (set),
+-- Voidform, Power Infusion, Madness, Void Volley.
+local tier = Engine.FindDefByID("builtin:priest_shadow_archon_4pc")
+Check(tier and tier.specID == 258 and #Engine.GetRuntime(tier).errors == 0, "4-piece built-in compiles")
+Check(Engine.BuiltinForSpec(258).id == "builtin:priest_shadow_archon", "the spec default is the opener without the set")
+ns.Store.SetActive(258, tier.id)
+rt = ns.GetActiveAPL()
+Check(rt.def == tier, "4-piece built-in selectable")
+wipe(S.cd); wipe(S.buffs); S.buffs[SHADOWFORM] = true; S.charges[TS] = 2
+ns.lastCastSpellID = nil
+Fight(0, 0)
+id, label = Suggest()
+Check(id == MB and label == "O2", "4pc opener: Mind Blast (" .. tostring(label) .. ")")
+local function Do(spell, label_, after)
+    local sid, l = Suggest()
+    Check(sid == spell and l == label_, "4pc opener " .. label_ .. ": " .. spell .. " got " .. tostring(sid) .. " (" .. tostring(l) .. ")")
+    ns.lastCastSpellID = sid
+    ns.combatCasts = ns.combatCasts + 1
+    if after then after() end
+end
+Do(MB, "O2", function() S.cd[MB] = true end)
+Do(TS, "O3", function() S.charges[TS] = 1 end)
+Do(HALO, "O4", function() S.cd[HALO] = true; S.overrides[VF] = VV end)   -- the set's Void Volley
+Do(VV, "O5", function() S.overrides[VF] = nil end)
+Do(VF, "O6", function() S.buffs[VF_BUFF] = true; S.overrides[VF] = VV end)
+Do(PI, "O7", function() S.cd[PI] = true end)
+Do(SWM, "O8", function() Engine.OnCast(rt, SWM) end)
+Do(VV, "O9")
+ns.Store.SetActive(258, nil)
+
 print_real(fails == 0 and "ALL PASS" or (fails .. " failures"))

@@ -48,6 +48,7 @@ end
 -- Resolve a base spell to its currently active override (e.g. Rising Sun Kick
 -- -> Rushing Wind Kick when the replacing talent is active).
 function ns.ResolveOverride(spellID)
+    if type(spellID) ~= "number" then return spellID end
     if C_Spell and C_Spell.GetOverrideSpell then
         local ov = C_Spell.GetOverrideSpell(spellID)
         if ov and ov ~= 0 and ov ~= spellID then return ov end

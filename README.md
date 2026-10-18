@@ -4,7 +4,7 @@
 
 APL for EUI is designed to replace the default client's **Assisted Highlight** with a rotation helper that follows a real-world APL. Instead of Blizzard's generic "press this next" hint, it follows a priority list you can see, edit, share and tune for your spec, hero talents and content. It also shows how closely you're following it.
 
-> **Status: 0.11, in active development.** Default APLs exist for only three specs so far:
+> **Status: 0.12, in active development.** Default APLs exist for only three specs so far:
 > - **Windwalker Monk**, Conduit of the Celestials
 > - **Beast Mastery Hunter**, Pack Leader
 > - **Shadow Priest**, Archon (new; still being tuned in game)
@@ -70,7 +70,7 @@ One of the less complicated rotations and talent setups, and it's performing wel
 
 ### Shadow Priest (Archon)
 
-New, and still being tuned. In limited testing it already outperforms Blizzard's Single-Button Assistant. It's built from Method's guide plus an in-game harvest. Like any DoT class, it runs into the limits of combat secrecy:
+New, and still being tuned. In limited testing it already outperforms Blizzard's Single-Button Assistant. It's built from Method's guide plus an in-game harvest, and comes as two built-ins that differ only in the opener: **Shadow - Archon** (Method's opener without the new 4-piece, the spec's default) and **Shadow - Archon 4-piece** (with it). Pick yours on the APL page. Like any DoT class, it runs into the limits of combat secrecy:
 
 - **Whether** your Vampiric Touch is on your **current target** can be read through the Cooldown Manager, so switching to an undotted target is caught.
 - **How long** a DoT has left can't be read on any target, so DoT timers are tracked from your own casts. They follow your last cast, not each target: on a target you dotted earlier, a refresh may come a little late.

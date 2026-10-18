@@ -225,4 +225,21 @@ Check(rt.errors[1] and rt.errors[1]:find("free casts", 1, true), "unknown free c
 def.freeCasts[2] = nil
 Store.Changed(def)
 
+-- 12. A hard cast that can't be interrupted: UnitCastingInfo's 8th return
+-- is notInterruptible (true), the spellID is the 9th. Reported by its ID.
+do
+    local saved = UnitCastingInfo
+    UnitCastingInfo = function() return "Mind Blast", "", 1, 0, 1500, false, "cg", true, TP end
+    combat:GetScript("OnEvent")(combat, "PLAYER_REGEN_DISABLED")
+    S.now = S.now + 1.5
+    local before = Stats()
+    onEvent(track, "UNIT_SPELLCAST_SENT", "player", "target", "hard-1", TP)
+    local ok, err = pcall(onEvent, track, "UNIT_SPELLCAST_START", "player", "hard-1", TP)
+    Check(ok, "uninterruptible hard cast doesn't error: " .. tostring(err))
+    onEvent(track, "UNIT_SPELLCAST_SUCCEEDED", "player", "hard-1", TP)
+    Check(Stats() == before + 1 and ns.lastCastSpellID == TP, "hard cast reported once, by its spellID")
+    combat:GetScript("OnEvent")(combat, "PLAYER_REGEN_ENABLED")
+    UnitCastingInfo = saved
+end
+
 print_real(fails == 0 and "ALL PASS" or (fails .. " failures"))

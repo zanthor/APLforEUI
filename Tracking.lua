@@ -233,7 +233,10 @@ local function OnEvent(_, event, unit, ...)
 
     if event == "UNIT_SPELLCAST_START" then
         if not castGUID then return end
-        local _, _, _, _, _, _, _, castSpellID = UnitCastingInfo("player")
+        -- UnitCastingInfo: ..., isTradeSkill, castID, notInterruptible, spellID
+        -- (9th); the 8th is a boolean (UnitChannelInfo has no castID, so its
+        -- spellID is the 8th).
+        local _, _, _, _, _, _, _, _, castSpellID = UnitCastingInfo("player")
         local sid = ResolveOverride(castSpellID or spellID)
         if sid then _pendingCastSpellID[castGUID] = sid end
 

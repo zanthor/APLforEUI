@@ -1,10 +1,11 @@
 local _, ns = ...
 
 -------------------------------------------------------------------------------
---  Built-in Shadow Priest APL, Archon hero tree. From Method's Midnight
---  Shadow guide (playstyle and rotation, Archon priority and the opener
---  without the new 4-piece); spell and aura IDs from an in-game harvest, not
---  guessed.
+--  Built-in Shadow Priest APLs, Archon hero tree. From Method's Midnight
+--  Shadow guide (playstyle and rotation, Archon priority); spell and aura IDs
+--  from an in-game harvest, not guessed. Two built-ins share everything but
+--  the opener: Method's opener without the new 4-piece (the spec's default)
+--  and with it.
 --
 --  Not expressible yet (secret in restricted combat), so approximated:
 --    * Debuff timing on the target is secret, so the dots are self-timed
@@ -20,16 +21,47 @@ local _, ns = ...
 --      turns out to be secret in combat this is simply never true.
 --    * Shadow Word: Death "below 20% health" is left out: target health is
 --      secret in combat.
---    * Void Volley: the harvest shows it cast from the Voidform button while
---      Voidform is up, so it's the voidform entry with Voidform up.
+--    * Void Volley replaces the Voidform button (its tooltip: cast by
+--      Voidform, then up to 3 more during Voidform), so it's the voidform
+--      entry while the button has turned into Void Volley or Voidform is up.
 --  Misery (talented in the harvest) makes Vampiric Touch apply Shadow Word:
 --  Pain, so there's no separate Shadow Word: Pain line.
 --  Track in the Cooldown Manager: Vampiric Touch, Voidform, Mind Flay:
 --  Insanity. Without Vampiric Touch tracked, it's always "missing".
 -------------------------------------------------------------------------------
-ns.RegisterBuiltinAPL({
-    id = "builtin:priest_shadow_archon",
-    name = "Shadow - Archon (default)",
+-- Method's openers. Priority lists like Windwalker's: each line fires once
+-- its spell is ready; a step that can't go falls through to Default.
+local OPENERS = {
+    -- Tentacle Slam, Halo, Voidform, Power Infusion, Shadow Word: Madness,
+    -- Void Volley.
+    base = {
+        { spell = "shadowform", when = "combat.time=0&!buff.shadowform.up" },
+        { spell = "tentacle_slam", when = "combat.casts=0&!prev.tentacle_slam" },
+        { spell = "halo" },
+        { spell = "voidform", when = "!variable.void_volley" },
+        { spell = "power_infusion" },
+        { spell = "shadow_word_madness", when = "!timer.swm.up" },
+        { spell = "voidform", when = "variable.void_volley" },
+    },
+    -- With the 4-piece: Mind Blast, Tentacle Slam, Halo, Void Volley (from
+    -- the set, before Voidform), Voidform, Power Infusion, Shadow Word:
+    -- Madness, Void Volley.
+    tier = {
+        { spell = "shadowform", when = "combat.time=0&!buff.shadowform.up" },
+        { spell = "mind_blast", when = "combat.casts=0&!prev.mind_blast" },
+        { spell = "tentacle_slam", when = "combat.casts<=1&!prev.tentacle_slam" },
+        { spell = "halo" },
+        { spell = "voidform", when = "variable.void_volley&!buff.voidform_buff.up" },
+        { spell = "voidform", when = "!variable.void_volley" },
+        { spell = "power_infusion" },
+        { spell = "shadow_word_madness", when = "!timer.swm.up" },
+        { spell = "voidform", when = "variable.void_volley" },
+    },
+}
+
+local function ShadowArchon(id, name, opener, window) return {
+    id = id,
+    name = name,
     specID = 258,
     builtin = true,
     options = { rangeSpell = "vampiric_touch" },
@@ -88,6 +120,8 @@ ns.RegisterBuiltinAPL({
         -- Shadow Word: Madness missing or about to expire (a GCD or less).
         { name = "swm_refresh", expr = "!timer.swm.up|timer.swm.remains<=1.5" },
         { name = "insanity_capping", expr = "resource.insanity>=85" },
+        -- The Voidform button is Void Volley right now (or Voidform is up).
+        { name = "void_volley", expr = "!(override.voidform=voidform)|buff.voidform_buff.up" },
     },
 
     timers = {
@@ -101,20 +135,8 @@ ns.RegisterBuiltinAPL({
     },
 
     groups = {
-        -- Method's opener (without the 4-piece): Tentacle Slam, Halo,
-        -- Voidform, Power Infusion, Shadow Word: Madness, Void Volley. A
-        -- priority list like Windwalker's: each line fires once its spell is
-        -- ready; a step that can't go falls through to Default.
-        { name = "Opener", prefix = "OP", when = "combat.casts<7&combat.time<15", lists = {
-            { name = "Opener", prefix = "O", min = 1, entries = {
-                { spell = "shadowform", when = "combat.time=0&!buff.shadowform.up" },
-                { spell = "tentacle_slam", when = "combat.casts=0&!prev.tentacle_slam" },
-                { spell = "halo" },
-                { spell = "voidform", when = "!buff.voidform_buff.up" },
-                { spell = "power_infusion" },
-                { spell = "shadow_word_madness", when = "!timer.swm.up" },
-                { spell = "voidform", when = "buff.voidform_buff.up" },
-            } },
+        { name = "Opener", prefix = "OP", when = window, lists = {
+            { name = "Opener", prefix = "O", min = 1, entries = opener },
         } },
         { name = "Default", prefix = "DEF", lists = {
             -- The guide's multi-target priority is the single-target one
@@ -125,7 +147,7 @@ ns.RegisterBuiltinAPL({
                 { spell = "tentacle_slam", when = "variable.vt_refresh" },
                 { spell = "vampiric_touch", when = "variable.vt_refresh" },
                 { spell = "halo" },
-                { spell = "voidform", when = "!buff.voidform_buff.up" },
+                { spell = "voidform", when = "!variable.void_volley" },
                 { spell = "power_infusion" },
                 { spell = "shadow_word_madness", when = "variable.swm_refresh|variable.insanity_capping" },
                 { spell = "tentacle_slam", when = "charges.tentacle_slam.full" },
@@ -133,9 +155,15 @@ ns.RegisterBuiltinAPL({
                 { spell = "tentacle_slam" },
                 { spell = "mind_flay", when = "buff.mind_flay_insanity.up&timer.swm.up" },
                 -- Void Volley.
-                { spell = "voidform", when = "buff.voidform_buff.up" },
+                { spell = "voidform", when = "variable.void_volley" },
                 { spell = "mind_flay" },
             } },
         } },
     },
-})
+} end
+
+-- The first one registered is the spec's default.
+ns.RegisterBuiltinAPL(ShadowArchon("builtin:priest_shadow_archon", "Shadow - Archon (default)",
+    OPENERS.base, "combat.casts<7&combat.time<15"))
+ns.RegisterBuiltinAPL(ShadowArchon("builtin:priest_shadow_archon_4pc", "Shadow - Archon 4-piece (default)",
+    OPENERS.tier, "combat.casts<9&combat.time<18"))
