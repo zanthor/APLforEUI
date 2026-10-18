@@ -26,6 +26,9 @@ local _, ns = ...
 --      entry while the button has turned into Void Volley or Voidform is up.
 --  Misery (talented in the harvest) makes Vampiric Touch apply Shadow Word:
 --  Pain, so there's no separate Shadow Word: Pain line.
+--  Power Infusion is holdable (hold 3, every line): ignored 3 times in a
+--  row, or skipped twice for the offered next action, it's held (to give it
+--  to someone else, or for a burst window).
 --  Track in the Cooldown Manager: Vampiric Touch, Voidform, Mind Flay:
 --  Insanity. Without Vampiric Touch tracked, it's always "missing".
 -------------------------------------------------------------------------------
@@ -39,7 +42,7 @@ local OPENERS = {
         { spell = "tentacle_slam", when = "combat.casts=0&!prev.tentacle_slam" },
         { spell = "halo" },
         { spell = "voidform", when = "!variable.void_volley" },
-        { spell = "power_infusion" },
+        { spell = "power_infusion", hold = 3 },
         { spell = "shadow_word_madness", when = "!timer.swm.up" },
         { spell = "voidform", when = "variable.void_volley" },
     },
@@ -53,7 +56,7 @@ local OPENERS = {
         { spell = "halo" },
         { spell = "voidform", when = "variable.void_volley&!buff.voidform_buff.up" },
         { spell = "voidform", when = "!variable.void_volley" },
-        { spell = "power_infusion" },
+        { spell = "power_infusion", hold = 3 },
         { spell = "shadow_word_madness", when = "!timer.swm.up" },
         { spell = "voidform", when = "variable.void_volley" },
     },
@@ -148,7 +151,7 @@ local function ShadowArchon(id, name, opener, window) return {
                 { spell = "vampiric_touch", when = "variable.vt_refresh" },
                 { spell = "halo" },
                 { spell = "voidform", when = "!variable.void_volley" },
-                { spell = "power_infusion" },
+                { spell = "power_infusion", hold = 3 },
                 { spell = "shadow_word_madness", when = "variable.swm_refresh|variable.insanity_capping" },
                 { spell = "tentacle_slam", when = "charges.tentacle_slam.full" },
                 { spell = "mind_blast" },
