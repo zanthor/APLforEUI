@@ -359,7 +359,12 @@ function Harvest.Export(specID)
         if s.sources.spellbook then tags[#tags + 1] = "spellbook" end
         if s.sources.talent then tags[#tags + 1] = "talent" end
         if s.passive then tags[#tags + 1] = "passive" end
-        if s.unlearned then tags[#tags + 1] = "unlearned" end
+        -- The Cooldown Manager's isKnown is false for some spells the player
+        -- has (Vanish, Halo, Ancestral Swiftness): only trust it when nothing
+        -- else says the spell is known.
+        local unlearned = s.unlearned and not s.casts and not s.sources.spellbook
+            and not (IsPlayerSpell and IsPlayerSpell(id))
+        if unlearned then tags[#tags + 1] = "unlearned" end
         if s.casts then tags[#tags + 1] = "casts=" .. s.casts end
         if s.cd then tags[#tags + 1] = "cd=" .. s.cd end
         if s.charges then tags[#tags + 1] = "charges=" .. s.charges end

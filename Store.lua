@@ -293,6 +293,29 @@ function Store.AddFreeCast(def, spellName)
     return true
 end
 
+-- Glow aliases: { spell = ability, glow = { names glowed instead } }.
+-- AddGlowAlias returns the alias, or nil if that ability already has one.
+function Store.AddGlowAlias(def, spellName)
+    def.glowAliases = def.glowAliases or {}
+    for _, a in ipairs(def.glowAliases) do
+        if a.spell == spellName then return nil end
+    end
+    local alias = { spell = spellName, glow = {} }
+    def.glowAliases[#def.glowAliases + 1] = alias
+    Store.Changed(def)
+    return alias
+end
+
+-- Returns false if the alias already glows that spell.
+function Store.AddGlowTarget(def, alias, spellName)
+    for _, name in ipairs(alias.glow) do
+        if name == spellName then return false end
+    end
+    alias.glow[#alias.glow + 1] = spellName
+    Store.Changed(def)
+    return true
+end
+
 function Store.AddEntry(def, list, spellName)
     local entry = { spell = spellName, when = "" }
     list.entries[#list.entries + 1] = entry
@@ -395,6 +418,12 @@ function Store.RenameBlock(def, kind, item, new)
         if def.options and def.options.rangeSpell == old then def.options.rangeSpell = new end
         for i, name in ipairs(def.freeCasts or {}) do
             if name == old then def.freeCasts[i] = new end
+        end
+        for _, a in ipairs(def.glowAliases or {}) do
+            if a.spell == old then a.spell = new end
+            for i, name in ipairs(a.glow or {}) do
+                if name == old then a.glow[i] = new end
+            end
         end
     else
         local arrayKey = kind == "timer" and "timers" or kind == "counter" and "counters" or "variables"

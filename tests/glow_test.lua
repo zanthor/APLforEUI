@@ -262,6 +262,66 @@ on = GlowingOn()
 Check(not on[EABButton1], "bar glow off again")
 Fire("PLAYER_REGEN_ENABLED")
 
+-- Glow alias: Xuen suggested, Tiger Palm's icon glows too.
+do
+    local def = ns.Engine.BuiltinForSpec(269)
+    wipe(S.cd)
+    def.glowAliases = { { spell = "invoke_xuen", glow = { "tiger_palm" } } }
+    ns.Engine.Invalidate(def)
+    Check(ns.EvaluateExpected() == XUEN, "Xuen is the suggestion")
+    Fire("PLAYER_REGEN_DISABLED")
+    local glowing = GlowingOn()
+    Check(glowing[tpItem] and glowing[xuenItem], "alias: Tiger Palm's icon glows as well as Xuen's")
+    Fire("PLAYER_REGEN_ENABLED")
+    def.glowAliases = nil
+    ns.Engine.Invalidate(def)
+end
+
+-- A tracked buff's icon as an alias stand-in (no cooldown icon for it).
+do
+    local def = ns.Engine.BuiltinForSpec(269)
+    local BUFF = 443294                          -- Heart of the Jade Serpent
+    local buffItem = Item(BUFF)
+    buffItem.GetCooldownInfo = function() return { spellID = BUFF, linkedSpellIDs = {} } end
+    local savedBuffs = BuffIconCooldownViewer
+    BuffIconCooldownViewer = { GetItemFrames = function() return { buffItem } end }
+    wipe(S.cd)
+    def.glowAliases = { { spell = "invoke_xuen", glow = { "hotjs" } } }
+    ns.Engine.Invalidate(def)
+    Fire("PLAYER_REGEN_DISABLED")
+    local glowing = GlowingOn()
+    Check(glowing[buffItem] and glowing[xuenItem], "alias to a tracked buff: its icon glows too")
+    Fire("PLAYER_REGEN_ENABLED")
+    buffItem.IsShown = function() return false end
+    Fire("PLAYER_REGEN_DISABLED")
+    Check(not GlowingOn()[buffItem], "hidden buff icon: nothing to glow")
+    Fire("PLAYER_REGEN_ENABLED")
+    def.glowAliases = nil
+    ns.Engine.Invalidate(def)
+    BuffIconCooldownViewer = savedBuffs
+end
+
+-- EUI's plugin API finds icons Blizzard's Cooldown Manager doesn't have
+-- (spells added to EUI's CDM); used first when EUI has it.
+do
+    local euiIcon = Item(TP)
+    EllesmereUI.GetCDMIconsForSpell = function(id, out)
+        wipe(out)
+        if id == XUEN then out[1] = euiIcon end
+        return out
+    end
+    wipe(S.cd)
+    Fire("PLAYER_REGEN_DISABLED")
+    local glowing = GlowingOn()
+    Check(glowing[euiIcon] and not glowing[xuenItem], "EUI's icon API used when present")
+    Fire("PLAYER_REGEN_ENABLED")
+    EllesmereUI.GetCDMIconsForSpell = function(_, out) wipe(out); return out end
+    Fire("PLAYER_REGEN_DISABLED")
+    Check(GlowingOn()[xuenItem], "API finds nothing: falls back to Blizzard's viewers")
+    Fire("PLAYER_REGEN_ENABLED")
+    EllesmereUI.GetCDMIconsForSpell = nil
+end
+
 -- Hold fork: the hold spell glows in Hold Color, the alternative normally.
 local wwDef = ns.Engine.BuiltinForSpec(269)
 wwDef.groups[1].lists[1].entries[1].hold = 3   -- O1 Invoke Xuen

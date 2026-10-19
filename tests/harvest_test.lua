@@ -141,6 +141,22 @@ Check(c.cdm == 2 and c.auras == 2 and c.timed == 2, "counts: " .. c.cdm .. "/" .
 local text = Harvest.Export(spec)
 Check(text:find("spell.34026=Kill Command | cdm=essential", 1, true) and text:find("charges=2", 1, true), "export: CDM ability with charges")
 Check(text:find("aura.186254=Bestial Wrath | cdm unit=player duration=15.0 from=19574 Bestial Wrath x1", 1, true) ~= nil, "export: buff line\n" .. text)
+-- "unlearned" (the Cooldown Manager's isKnown = false) only when nothing
+-- else says the spell is known: not for a spellbook spell, a cast one or one
+-- IsPlayerSpell knows.
+do
+    local savedIPS = IsPlayerSpell
+    IsPlayerSpell = function(id) return id ~= 777 end
+    cat.spells[HM].unlearned = true
+    cat.spells[777] = { name = "Never Learned", sources = { cdm = "utility" }, unlearned = true }
+    local t = Harvest.Export(spec)
+    local hmLine = t:match("spell%.257284=[^\n]*") or ""
+    Check(hmLine:find("spellbook", 1, true) and not hmLine:find("unlearned", 1, true),
+        "spellbook spell flagged unknown by the CDM: no unlearned tag (" .. hmLine .. ")")
+    Check(t:find("spell.777=Never Learned | cdm=utility unlearned", 1, true) ~= nil, "truly unknown spell keeps the tag")
+    cat.spells[HM].unlearned = nil; cat.spells[777] = nil
+    IsPlayerSpell = savedIPS
+end
 
 -- 3. Switch: zero cost while off, scans on enable --------------------------------
 local hframe

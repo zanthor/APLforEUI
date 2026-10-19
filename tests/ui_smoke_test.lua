@@ -156,6 +156,20 @@ table.remove(def.freeCasts)
 Store.Changed(def)
 Kit.state.open[ns.Editor.FREE_CASTS_KEY] = nil
 Build("Lists")
+-- Glow aliases: collapsed by default; add an alias and a spell to glow.
+Check(Row("Add Alias") == nil, "glow aliases collapsed by default")
+Kit.state.open[ns.Editor.GLOW_ALIASES_KEY] = true
+Build("Lists")
+Row("Add Alias").setValue("100780")
+Check(def.glowAliases and #def.glowAliases == 1 and def.glowAliases[1].spell == "tiger_palm", "alias added from the page")
+Build("Lists")
+Row("Also Glow").setValue("113656")
+Check(def.glowAliases[1].glow[1] == "fists_of_fury", "glow target added from the page")
+Check(#Engine.GetRuntime(def).errors == 0, "APL with an alias compiles")
+def.glowAliases = nil
+Store.Changed(def)
+Kit.state.open[ns.Editor.GLOW_ALIASES_KEY] = nil
+Build("Lists")
 local function ListPrefix()
     for _, cfg in ipairs(rec.rows) do
         if cfg.text == "Prefix" and cfg.tooltip and cfg.tooltip:find("entry's position", 1, true) then return cfg end

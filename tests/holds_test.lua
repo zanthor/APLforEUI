@@ -242,4 +242,32 @@ do
     UnitCastingInfo = saved
 end
 
+-- 13. Glow aliases: compile, look up (by base or override), rename, survive
+-- export/import, unknown names reported.
+do
+    local alias = Store.AddGlowAlias(def, "white_tiger")   -- xuen, renamed in 10
+    Check(alias and Store.AddGlowAlias(def, "white_tiger") == nil, "alias added once per ability")
+    Check(Store.AddGlowTarget(def, alias, "tp") and not Store.AddGlowTarget(def, alias, "tp"), "glow target added once")
+    Store.AddGlowTarget(def, alias, "fof")
+    rt = ns.GetActiveAPL()
+    local g = Engine.GlowTargets(rt, XUEN)
+    Check(#rt.errors == 0 and g and g[1] == TP and g[2] == FOF, "Xuen also glows Tiger Palm and Fists")
+    Check(Engine.GlowTargets(rt, TP) == nil, "no alias: just the spell itself")
+    S.overrides[XUEN] = 443028
+    Check(Engine.GlowTargets(rt, 443028) ~= nil, "alias follows the ability's override")
+    S.overrides[XUEN] = nil
+    Store.RenameBlock(def, "name", "tp", "palm")
+    Check(def.glowAliases[1].glow[1] == "palm", "rename rewrites glow targets")
+    local back = ns.Exchange.Import(ns.Exchange.Export(def))
+    Check(back and back.glowAliases and back.glowAliases[1].spell == "white_tiger"
+        and back.glowAliases[1].glow[1] == "palm" and back.glowAliases[1].glow[2] == "fof", "aliases survive export/import")
+    def.glowAliases[1].glow[3] = "nope"
+    Store.Changed(def)
+    rt = ns.GetActiveAPL()
+    Check(rt.errors[1] and rt.errors[1]:find("glow aliases", 1, true), "unknown glow target reported: " .. tostring(rt.errors[1]))
+    def.glowAliases = nil
+    Store.Changed(def)
+    rt = ns.GetActiveAPL()
+end
+
 print_real(fails == 0 and "ALL PASS" or (fails .. " failures"))

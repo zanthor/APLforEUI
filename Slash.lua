@@ -33,8 +33,8 @@ ns.slashCommands.melee = function()
             end
         end
     end
-    print("APL debug: GetTargetCount() = " .. ns.GetTargetCount()
-        .. (ns.targetOverride and " (fixed by /apl targets)" or ""))
+    print("APL debug: in range now = " .. ns.CountTargetsNow() .. ", APL uses " .. ns.GetTargetCount()
+        .. (ns.targetOverride and " (fixed by /apl targets)" or " (drops wait " .. ns.TARGET_DROP_DELAY .. "s)"))
 end
 
 -- /apl targets N: fix the target count (testing on dummies); /apl targets

@@ -60,7 +60,19 @@ return function(dir)
     UnitIsDead = function() return false end
     -- S.idle[unit] = true: an enemy that isn't in combat.
     S.idle = {}
-    UnitAffectingCombat = function(unit) return not S.idle[unit] end
+    -- Group: S.group = nil (solo), "party" or "raid"; S.members[unit] = in
+    -- combat (true/false) for each other member.
+    S.members = {}
+    IsInGroup = function() return S.group ~= nil end
+    IsInRaid = function() return S.group == "raid" end
+    GetNumGroupMembers = function() local n = 1; for _ in pairs(S.members) do n = n + 1 end; return S.group and n or 0 end
+    UnitExists = function(unit) return S.members[unit] ~= nil or unit == "player" end
+    -- S.playerUnit: the raid slot that is the player ("raid1").
+    UnitIsUnit = function(a, b) return a == b or (b == "player" and a == S.playerUnit) end
+    UnitAffectingCombat = function(unit)
+        if S.members[unit] ~= nil then return S.members[unit] end
+        return not S.idle[unit]
+    end
     Enum = { PowerType = { Mana = 0, Energy = 3, Chi = 12, ComboPoints = 4, Insanity = 13, Maelstrom = 11 } }
     UnitPower = function(_, pt) if pt == 12 then return S.chi end return 0 end
     local BASE_CD = { [1249625] = 90000, [123904] = 120000 }
@@ -143,5 +155,7 @@ return function(dir)
             f("APLforEUI", ns)
         end
     end
+    -- Target-count drops apply at once in tests; groups_test covers the delay.
+    ns.TARGET_DROP_DELAY = 0
     return S, ns, printed
 end

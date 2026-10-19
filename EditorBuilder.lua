@@ -50,6 +50,8 @@ local CATEGORIES = {
     { key = "combat_casts", label = "Casts this combat", tpl = "combat.casts", numeric = true },
     { key = "targets", label = "Targets", tpl = "targets", numeric = true },
     { key = "bloodlust", label = "Bloodlust active", tpl = "bloodlust" },
+    { key = "group", label = "In a group", tpl = "group" },
+    { key = "group_combat", label = "Group member in combat", tpl = "group.combat" },
 }
 local CAT_BY_KEY, CAT_VALUES, CAT_ORDER = {}, {}, {}
 for _, c in ipairs(CATEGORIES) do

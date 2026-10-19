@@ -38,6 +38,7 @@ EllesmereUI Cooldown Manager (`OptionalDeps`), so it must also work without them
   `tests/bm_test.lua .` (built-in Beast Mastery APL against the guide),
   `tests/shadow_test.lua .` (built-in Shadow Priest Archon APL against the guide),
   `tests/elemental_test.lua .` (built-in Elemental Shaman Farseer Raid/M+ APLs against the guide),
+  `tests/subtlety_test.lua .` (built-in Subtlety Rogue Trickster APL against the guide),
   `tests/ui_smoke_test.lua .` (every editor page against a recording mock
   EllesmereUI, driven like a user; catches errors, not layout) and
   `tests/parity_sim.lua .` (frozen `tests/legacy_Monk_Windwalker.lua` vs the

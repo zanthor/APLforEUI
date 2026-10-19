@@ -4,11 +4,12 @@
 
 APL for EUI is designed to replace the default client's **Assisted Highlight** with a rotation helper that follows a real-world APL. Instead of Blizzard's generic "press this next" hint, it follows a priority list you can see, edit, share and tune for your spec, hero talents and content. It also shows how closely you're following it.
 
-> **Status: 0.13, in active development.** Default APLs exist for only four specs so far:
+> **Status: 0.14, in active development.** Default APLs exist for only five specs so far:
 > - **Windwalker Monk**, Conduit of the Celestials
 > - **Beast Mastery Hunter**, Pack Leader
 > - **Shadow Priest**, Archon (new; still being tuned in game)
 > - **Elemental Shaman**, Farseer, Raid and Mythic+ (new; working well in early testing)
+> - **Subtlety Rogue**, Trickster (new; not yet tested in game)
 >
 > See [Default APLs](#default-apls) for how each one is doing. Every other spec works too, but you build its APL yourself with the in-game editor. Data harvesting (below) does most of the groundwork.
 
@@ -26,6 +27,7 @@ APL for EUI is designed to replace the default client's **Assisted Highlight** w
 ### APLs that work like SimC
 - **Groups of lists by target count:** `1`, `2-4`, `5+` and so on. The first active group with a list for the current target count suggests. If that list has nothing ready, the next group gets a turn.
 - **Openers and burst windows** are just groups with a condition, e.g. "first 5 casts or 8 seconds of combat" (one click), or "while Bestial Wrath is up".
+- **Glow aliases:** a per-APL list of "when this ability is suggested, glow these too", for setups where the key you press isn't the ability's own button: a stance-paged key, a castsequence macro, a key that does different things in different situations. The ability keeps its own glow, and one ability can light up several more; only the glows change, not the suggestion or compliance. Meant for your own APL, matching your own key setup.
 - **Free casts:** a per-APL list of spells (interrupts, movement, defensives) you can press at any time without lowering compliance. They don't count as ignoring a hold line or as the last cast. The Windwalker default lists its kick, crowd control, movement and defensives.
 - **Conditions** can be built **point-and-click** (All / Any / None of these, with is / is-not rows), or typed as **SimC-style text** with autocomplete and live error checking:
   ```
@@ -82,6 +84,10 @@ New, and still being tuned. In limited testing it already outperforms Blizzard's
 
 New, and working well in early testing. Built from Method's guide plus an in-game harvest, as two built-ins with the guide's openers and target-count lists: **Elemental - Farseer Raid** (the spec's default) and **Elemental - Farseer M+**. Pick yours on the APL page. Stormkeeper is holdable (`hold = 3`), and Ascendance always follows Stormkeeper, so holding Stormkeeper holds Ascendance too. Flame Shock has the same DoT limits as Shadow's Vampiric Touch: it's timed from your casts, and whether it's on your current target is read through the Cooldown Manager. Maelstrom is secret in combat, so the guide's "spend before capping Maelstrom" rule is left out; spenders are suggested whenever they're castable.
 
+### Subtlety Rogue (Trickster)
+
+New, and still being tested in game. Built from Method's guide plus an in-game harvest: Method's single-target and AoE openers, then the Trickster priority (Goremaw's Bite on cooldown, Coup de Grace whenever it's up, Shadow Dance at 6+ combo points with Secret Technique ready, saving both Dance charges for Shadow Blades, Vanish at low combo points). Vanish is only suggested while someone else in your group is in combat (`group.combat`): solo it would drop combat and reset the fight. Shadow Blades is holdable (`hold = 3`); while it's held, Shadow Dance keeps one charge back for the burst. Shadowstrike comes from the stealth bar page, not from Backstab's button: see [Stance-paged spells and macros](#stance-paged-spells-and-macros).
+
 ## Requirements
 
 - **World of Warcraft: Midnight** (Interface 120100).
@@ -96,6 +102,19 @@ New, and working well in early testing. Built from Method's guide plus an in-gam
 4. **APL:** if your spec has a built-in APL it's already running. Built-ins are read-only; click **Duplicate to Edit** to make your own copy.
 5. **Track the buffs your APL uses in the Cooldown Manager.** The defaults list theirs at the top of their files, e.g. Howl of the Pack Leader, Nature's Ally, Beast Cleave and Cobra Fang for Beast Mastery.
 
+### Stance-paged spells and macros
+
+Some spells don't replace another spell's button: the game swaps them in by **paging the action bar** when you enter a stance or form (for Rogues, Stealth and Shadow Dance page to the stealth bar, where Shadowstrike lives instead of Backstab). The APL suggests these by their own name. If you'd rather keep one key for both, use a macro on an unpaged key:
+
+```
+#showtooltip
+/cast [bonusbar:1] Shadowstrike; Backstab
+```
+
+`[bonusbar:1]` is the Rogue's stealth page; other classes' stances and forms use their own bar numbers, so check yours before copying. The suggestion glow and compliance follow whichever spell the macro actually casts.
+
+If the glow can't follow your key (the Cooldown Manager shows the key's spell, not what it casts in a stance), add a **glow alias** to your APL: e.g. glow Shadow Dance whenever Secret Technique is suggested.
+
 ## How it copes with combat secrecy
 
 In Midnight, much of the game's combat data is **secret** to addons during restricted combat, including dungeons, raids and even training-dummy fights. That covers cooldown timers, buff durations and stack counts, and resources such as Energy. APL for EUI only uses what stays readable and fills the gaps itself:
@@ -103,7 +122,7 @@ In Midnight, much of the game's combat data is **secret** to addons during restr
 - **Yes/no signals** for cooldowns, charges and "can I cast this", plus Chi and similar resources.
 - **Buffs through the Cooldown Manager.** Blizzard's Cooldown Manager can still show which buffs are active, so **a buff must be tracked there** for an APL to see it in combat. The same goes for your own debuffs, which are seen on your current target only.
 - **Self-tracked timers and counters** for everything else, started from your casts (which stay readable).
-- **Enemies in combat within your range spell** for the target count.
+- **Enemies in combat within your range spell** for the target count. A higher count applies at once; a lower one waits 5 seconds, so enemies stepping in and out of range don't flip the single-target and AoE lists back and forth.
 
 Some guide lines can't be expressed exactly and are approximated. Each default APL lists its approximations at the top of its file in [`Defaults/`](Defaults/).
 
@@ -141,7 +160,7 @@ Please don't guess spell IDs. Midnight has many spells that share a name but use
   lua tests/bm_test.lua .
   EAGER=1 lua tests/parity_sim.lua .
   ```
-  The other suites in [`tests/`](tests/) run the same way: `ui_smoke_test`, `editor_logic_test`, `exchange_test`, `groups_test`, `holds_test`, `glow_test`, `harvest_test`, `shadow_test` and `elemental_test`.
+  The other suites in [`tests/`](tests/) run the same way: `ui_smoke_test`, `editor_logic_test`, `exchange_test`, `groups_test`, `holds_test`, `glow_test`, `harvest_test`, `shadow_test`, `elemental_test` and `subtlety_test`.
 - Design notes and decisions: [`design.md`](design.md).
 
 ## Author and license

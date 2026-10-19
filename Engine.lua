@@ -230,6 +230,12 @@ local function MakeResolver(rt)
                 if not ctx.targets then ctx.targets = ns.GetTargetCount(rt.rangeSpellID) end
                 return ctx.targets
             end
+        elseif head == "group" then
+            -- group: in a party or raid; group.combat: another member is in combat.
+            if #path == 1 then return function() return Bool(ns.InGroup()) end end
+            Want(path, 2, "group or group.combat")
+            if a == "combat" then return function() return Bool(ns.GroupInCombat()) end end
+            Fail("unknown group field '" .. a .. "'")
         elseif head == "bloodlust" then
             Want(path, 1, "bloodlust")
             return function() return Bool(ns.HasBloodlust()) end
@@ -313,6 +319,7 @@ function Engine.Compile(def)
         varFns = {}, groups = {}, errors = {}, tts = {},
         holds = {},  -- [base spellID] = { count = consecutive ignores, held = bool }
         free = {},   -- free casts: spellIDs that never count against compliance
+        glowAlias = {},  -- { id = ability spellID, glow = { spellIDs glowed instead } }
         ctx = { vars = {} },
     }
     local options = def.options or {}
@@ -326,6 +333,23 @@ function Engine.Compile(def)
     for _, name in ipairs(def.freeCasts or {}) do
         local id = rt.names[name]
         if id then rt.free[#rt.free + 1] = id else err("free casts", "unknown name '" .. tostring(name) .. "'") end
+    end
+
+    -- Glow aliases: when an ability is suggested, glow these as well (a key
+    -- that casts it from a stance page, a castsequence...).
+    for _, a in ipairs(def.glowAliases or {}) do
+        local id = rt.names[a.spell or ""]
+        if not id then
+            err("glow aliases", "unknown name '" .. tostring(a.spell) .. "'")
+        else
+            local glow = {}
+            for _, name in ipairs(a.glow or {}) do
+                local gid = rt.names[name]
+                if gid then glow[#glow + 1] = gid
+                else err("glow aliases", tostring(a.spell) .. ": unknown name '" .. tostring(name) .. "'") end
+            end
+            if #glow > 0 then rt.glowAlias[#rt.glowAlias + 1] = { id = id, glow = glow } end
+        end
     end
 
     -- Keyed by spell ID so the widget can look up whatever it is showing.
@@ -652,6 +676,15 @@ function Engine.IsFreeCast(rt, castID)
         if IsCastOf(castID, free[i]) then return true end
     end
     return false
+end
+
+-- The spells to glow as well as spellID (its glow alias), or nil.
+function Engine.GlowTargets(rt, spellID)
+    local aliases = rt.glowAlias
+    for i = 1, #aliases do
+        if IsCastOf(spellID, aliases[i].id) then return aliases[i].glow end
+    end
+    return nil
 end
 
 function Engine.OnCastResult(rt, castID, entry, altID)

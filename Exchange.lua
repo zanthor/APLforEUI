@@ -112,6 +112,10 @@ function Exchange.Export(def)
 
     if def.freeCasts and #def.freeCasts > 0 then L("") end
     for _, name in ipairs(def.freeCasts or {}) do L("free_cast+=/" .. name) end
+    if def.glowAliases and #def.glowAliases > 0 then L("") end
+    for _, a in ipairs(def.glowAliases or {}) do
+        L("glow_alias." .. a.spell .. "=" .. table.concat(a.glow or {}, ","))
+    end
 
     local taken, groupTaken = {}, {}
     for _, group in ipairs(def.groups or {}) do
@@ -308,6 +312,18 @@ function Exchange.Import(text)
                     else
                         def.freeCasts = def.freeCasts or {}
                         def.freeCasts[#def.freeCasts + 1] = name
+                    end
+                elseif head == "glow_alias" and a ~= "" and b == "" then
+                    def.glowAliases = def.glowAliases or {}
+                    local alias
+                    for _, x in ipairs(def.glowAliases) do if x.spell == a then alias = x end end
+                    if not alias then
+                        alias = { spell = a, glow = {} }
+                        def.glowAliases[#def.glowAliases + 1] = alias
+                    end
+                    for name in StripComment(val):gmatch("[^,%s]+") do
+                        if name:match("^[%a_][%w_]*$") then alias.glow[#alias.glow + 1] = name
+                        else Err(n, "glow_alias needs spell short names, comma separated") end
                     end
                 elseif head == "variable" and a ~= "" and b == "" then
                     def.variables[#def.variables + 1] = { name = a, expr = val }

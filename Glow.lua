@@ -63,7 +63,18 @@ end
 
 -- Cooldown Manager: the shown viewer item for the spell (one icon).
 local CDM_VIEWERS = { "EssentialCooldownViewer", "UtilityCooldownViewer" }
+local cdmIcons = {}     -- scratch for EllesmereUI.GetCDMIconsForSpell
+
 local function FindCDM(spellID, out)
+    -- EUI's plugin API: every CDM bar icon for the spell, including spells
+    -- EUI adds that Blizzard's Cooldown Manager doesn't track.
+    local GetIcons = EllesmereUI and EllesmereUI.GetCDMIconsForSpell
+    if GetIcons then
+        GetIcons(spellID, cdmIcons)
+        for i = 1, #cdmIcons do out[#out + 1] = cdmIcons[i] end
+        if #cdmIcons > 0 then return end
+    end
+    -- Older EUI: Blizzard's own viewers.
     local base = BaseOf(spellID)
     for _, name in ipairs(CDM_VIEWERS) do
         local viewer = _G[name]
@@ -74,6 +85,16 @@ local function FindCDM(spellID, out)
                 out[#out + 1] = item
                 return
             end
+        end
+    end
+    -- Not a cooldown icon: a tracked buff's icon (its own or a linked spell),
+    -- e.g. a buff a glow alias borrows as a stand-in. Only while it's shown.
+    local viewer = BuffIconCooldownViewer
+    local items = viewer and viewer.GetItemFrames and viewer:GetItemFrames()
+    for _, item in ipairs(items or {}) do
+        if item:IsShown() and (ns.ItemShowsSpell(item, spellID) or (base and ns.ItemShowsSpell(item, base))) then
+            out[#out + 1] = item
+            return
         end
     end
 end
@@ -281,6 +302,20 @@ local function Start(target, frame, w, h, kind)
     return ov
 end
 
+-- The running APL, for glow aliases (set each tick).
+local tickRT
+
+-- Frames showing spellID, plus its glow alias's spells. The ability keeps
+-- its own glow (where it has a button or icon); the alias adds the keys
+-- that cast it another way.
+local function Find(target, spellID, out)
+    target.find(spellID, out)
+    local alias = tickRT and ns.Engine.GlowTargets(tickRT, spellID)
+    if alias then
+        for i = 1, #alias do target.find(alias[i], out) end
+    end
+end
+
 -- spellID glows normally, or in Hold Color when it's a hold line (isHold);
 -- alt (the hold fork's next valid action) glows normally beside it. With
 -- Persistent Hold, every held spell glows in Hold Color too.
@@ -290,18 +325,18 @@ local function TickTarget(target, spellID, isHold, alt, persist)
     wipe(want)
     if ns.GlowEnabled(target.key) then
         if spellID then
-            target.find(spellID, found)
+            Find(target, spellID, found)
             for i = 1, #found do want[found[i]] = isHold and "hold" or "normal" end
         end
         if alt then
             local n = #found
-            target.find(alt, found)
+            Find(target, alt, found)
             for i = n + 1, #found do want[found[i]] = want[found[i]] or "normal" end
         end
         if persist and ns.GlowPersistentHold(target.key) then
             for _, id in ipairs(held) do
                 local n = #found
-                target.find(id, found)
+                Find(target, id, found)
                 for i = n + 1, #found do want[found[i]] = want[found[i]] or "hold" end
             end
         end
@@ -342,6 +377,7 @@ local function Tick()
     if AnyActive() then
         spellID, _, _, entry, alt = ns.EvaluateExpected()
         local rt = ns.GetActiveAPL()
+        tickRT = rt
         if rt then ns.Engine.HeldSpells(rt, held) end
     end
     local isHold = entry ~= nil and entry.hold ~= nil

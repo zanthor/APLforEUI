@@ -16,7 +16,7 @@ class/spec, edited in game inside the EllesmereUI plugin section.
 | Burst / conditional lists | List sets that take priority while a condition holds (e.g. Courage of the White Tiger or HotJS up). Phase 5, same mechanism as openers. |
 | Holding cooldowns | An entry can be marked holdable: ignoring it for X casts sets a "holding" state that conditions can read; casting it (or leaving combat) clears it. Phase 6. |
 | Combo Strikes | Generic APL option "never suggest the last cast"; only the Windwalker APL turns it on. |
-| Spec support | A spec is "supported" when we ship a default APL for it. Windwalker Monk; Beast Mastery Hunter (Pack Leader) from a harvest + Method's guide, Dark Ranger pending a harvest with that hero tree; Shadow Priest (Archon) and Elemental Shaman (Farseer, Raid and M+) from a harvest + Method's guide. No Lua per spec: everything is configuration (below). The Lua spec registry was removed once Windwalker reached parity; re-add a hook only if something truly cannot be modelled. |
+| Spec support | A spec is "supported" when we ship a default APL for it. Windwalker Monk; Beast Mastery Hunter (Pack Leader) from a harvest + Method's guide, Dark Ranger pending a harvest with that hero tree; Shadow Priest (Archon) Elemental Shaman (Farseer, Raid and M+) and Subtlety Rogue (Trickster) from a harvest + Method's guide. No Lua per spec: everything is configuration (below). The Lua spec registry was removed once Windwalker reached parity; re-add a hook only if something truly cannot be modelled. |
 | Shipped defaults | Default APLs, plus a library of ready-made timers, counters and variables (as we sort them out) that the editor copies into an APL. Copies, not references, so an APL stays self-contained. |
 | Import/Export | Wanted. Format still open (see Open items). |
 | Saved data | Per account (`APLforEUIDB`). |
@@ -55,6 +55,7 @@ comparisons, `&`, `|` (write `!(a<=b)`, not `!a<=b`).
 | `resource.<power>` | `UnitPower` for any `Enum.PowerType` (`resource.chi`); unknown if secret. |
 | `targets` | Enemies in range of the APL's range spell. |
 | `bloodlust` | Any lust buff up. |
+| `group`, `group.combat` | In a party or raid; another group member in combat (UnitAffectingCombat on the party/raid units, readable). |
 | `X` | A bare name is that spell's ID. |
 
 ### Timers
@@ -93,6 +94,28 @@ requirements, talented; an entry can opt out with "Only When Usable" off),
 it is not the last cast (if the APL option is on), and its condition is
 true. The suggestion is the resolved spell. An unknown/secret usable value
 never blocks an entry.
+
+### Glow aliases
+
+`def.glowAliases = { { spell = <name>, glow = { <names> } } }`: when the
+suggestion (or hold fork alternative, or a persistent hold) is `spell`, or
+its override, the glow targets find the `glow` spells' frames as well as
+its own (the ability's button or icon still glows). Glows
+only: suggestion, widget, TTS and compliance are untouched. Export:
+`glow_alias.<spell>=<name>,<name>`. For personal key setups (stance pages,
+castsequence macros), never in shipped defaults.
+
+### Stance-paged spells
+
+A spell that only exists on a stance / form action bar page (Rogue
+Shadowstrike on the stealth page, `[bonusbar:1]`) is NOT an override of the
+spell it sits over: `C_Spell.GetOverrideSpell(Backstab)` stays Backstab.
+APLs give such spells their own entry, gated on the stance (buff), and
+players who want one key use a `[bonusbar:N]` macro (README). Override-style
+swaps (Rising Sun Kick -> Rushing Wind Kick, Voidform -> Void Volley,
+Eviscerate -> Coup de Grace) are
+the other kind and need only the base entry. Check which kind a spell is in
+game before writing a default.
 
 ### Windwalker mapped onto these
 

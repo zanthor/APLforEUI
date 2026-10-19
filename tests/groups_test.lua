@@ -286,4 +286,33 @@ do
     S.targets = saved
 end
 
+-- Target count: a rise shows at once, a drop waits 5s since the higher count
+-- was last seen; flickering in and out of range doesn't flip lists.
+do
+    local saved = S.targets
+    ns.TARGET_DROP_DELAY = 5
+    S.targets = 1
+    S.now = S.now + 10
+    Check(ns.GetTargetCount() == 1, "1 target")
+    S.targets = 4
+    Check(ns.GetTargetCount() == 4, "rise to 4: at once")
+    S.targets = 1
+    S.now = S.now + 2
+    Check(ns.GetTargetCount() == 4, "drop to 1: still 4 after 2s")
+    S.targets = 4
+    S.now = S.now + 1
+    Check(ns.GetTargetCount() == 4, "back to 4: the wait restarts")
+    S.targets = 1
+    S.now = S.now + 4
+    Check(ns.GetTargetCount() == 4, "4s after the last 4: still 4")
+    S.now = S.now + 1.5
+    Check(ns.GetTargetCount() == 1, "5s after the last 4: drops to 1")
+    Check(ns.CountTargetsNow() == 1, "the raw count is still available")
+    SlashCmdList.APLFOREUI("targets 3")
+    Check(ns.GetTargetCount() == 3, "/apl targets still overrides")
+    SlashCmdList.APLFOREUI("targets")
+    ns.TARGET_DROP_DELAY = 0
+    S.targets = saved
+end
+
 print_real(fails == 0 and "ALL PASS" or (fails .. " failures"))

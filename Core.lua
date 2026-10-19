@@ -103,8 +103,8 @@ end
 -- Session only: a reload goes back to counting nameplates.
 ns.targetOverride = nil
 
-function ns.GetTargetCount(rangeSpellID)
-    if ns.targetOverride then return ns.targetOverride end
+-- Enemies in combat within range of rangeSpellID right now.
+function ns.CountTargetsNow(rangeSpellID)
     local count = 0
     if not rangeSpellID then
         local apl = ns.GetActiveAPL()
@@ -121,6 +121,24 @@ function ns.GetTargetCount(rangeSpellID)
         end
     end
     return count
+end
+
+-- The target count the APL uses. A rise shows at once; a drop waits until
+-- TARGET_DROP_DELAY seconds after the higher count was last seen, so enemies
+-- stepping in and out of range don't flip the AoE / single-target lists
+-- back and forth.
+ns.TARGET_DROP_DELAY = 5
+local shownTargets, shownSince = 0, 0
+function ns.GetTargetCount(rangeSpellID)
+    if ns.targetOverride then return ns.targetOverride end
+    local raw = ns.CountTargetsNow(rangeSpellID)
+    local now = GetTime()
+    if raw >= shownTargets then
+        shownTargets, shownSince = raw, now
+    elseif now - shownSince >= ns.TARGET_DROP_DELAY then
+        shownTargets, shownSince = raw, now
+    end
+    return shownTargets
 end
 
 -------------------------------------------------------------------------------
@@ -148,6 +166,7 @@ local function ItemShowsSpell(item, spellID)
     end
     return false
 end
+ns.ItemShowsSpell = ItemShowsSpell
 
 function ns.FindCooldownViewerItemForSpell(spellID)
     for _, viewerName in ipairs({ "BuffIconCooldownViewer", "BuffBarCooldownViewer" }) do
@@ -196,6 +215,32 @@ local LUST_BUFFS = {
     390386,  -- Fury of the Aspects
     272678,  -- Primal Rage
 }
+
+-- In a party or raid (instance groups and delve companions included).
+function ns.InGroup()
+    return IsInGroup and IsInGroup() or false
+end
+
+-- Unit tokens, built once so the combat check allocates nothing.
+local RAID_UNITS, PARTY_UNITS = {}, {}
+for i = 1, 40 do RAID_UNITS[i] = "raid" .. i end
+for i = 1, 4 do PARTY_UNITS[i] = "party" .. i end
+
+-- Another group member is in combat (so dropping combat yourself, e.g. with
+-- Vanish, doesn't reset the fight).
+function ns.GroupInCombat()
+    if not ns.InGroup() then return false end
+    local raid = IsInRaid and IsInRaid()
+    local units = raid and RAID_UNITS or PARTY_UNITS
+    local n = raid and math.min(GetNumGroupMembers and GetNumGroupMembers() or 0, 40) or 4
+    for i = 1, n do
+        local unit = units[i]
+        if UnitExists(unit) and not UnitIsUnit(unit, "player") and UnitAffectingCombat(unit) then
+            return true
+        end
+    end
+    return false
+end
 
 function ns.HasBloodlust()
     for _, sid in ipairs(LUST_BUFFS) do

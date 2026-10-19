@@ -202,6 +202,24 @@ local function FreeCastsTitle(def, free)
     return n .. (n == 1 and " spell" or " spells") .. "   |cff909090" .. text .. "|r"
 end
 
+-- Open state key for the Glow Aliases row.
+local GLOW_ALIASES = {}
+Editor.GLOW_ALIASES_KEY = GLOW_ALIASES  -- for tests
+
+local function AliasTargets(def, alias)
+    local names = {}
+    for i, name in ipairs(alias.glow or {}) do names[i] = SpellLabel(def, name) end
+    return #names > 0 and table.concat(names, ", ") or "|cffff6060nothing yet|r"
+end
+
+local function GlowAliasesTitle(def, aliases)
+    local n = #aliases
+    if n == 0 then return "None   |cff909090click to add|r" end
+    local first = aliases[1]
+    return n .. (n == 1 and " alias" or " aliases") .. "   |cff909090" .. SpellLabel(def, first.spell)
+        .. " -> " .. AliasTargets(def, first) .. (n > 1 and ", ..." or "") .. "|r"
+end
+
 local function GroupTitle(group)
     local count = #(group.lists or {})
     local cond = (group.when and group.when ~= "") and ("active when " .. Preview(group.when)) or "always active"
@@ -355,6 +373,81 @@ function Editor.BuildListsPage(parent, yOffset)
             { type = "spacer" })
         y = y - h
         Kit.OpenSpan(parent, freeTop, y, 0)
+    end
+
+    -- Glow aliases: when an ability is suggested, glow other spells' icons
+    -- and buttons too. Collapsed by default, like Free Casts.
+    _, h = W:SectionHeader(parent, "GLOW ALIASES", y); y = y - h
+    local aliases = def.glowAliases or {}
+    local aliasOpen = Kit.IsOpen(GLOW_ALIASES)
+    local aliasTop = y
+    y = Kit.Header(parent, y, {
+        title = GlowAliasesTitle(def, aliases),
+        open = aliasOpen, editable = editable,
+        tooltip = "Glow other spells when an ability is suggested. Click to show or edit them.",
+        onClick = function() Kit.Toggle(GLOW_ALIASES) end,
+    })
+    if aliasOpen then
+        local sub = Kit.Child(parent)
+        y = Kit.Note(sub, y, "When the ability is suggested, these spells' Cooldown Manager icons and action bar buttons glow too, as well as the ability's own: the key you actually press for it (a stance page, a castsequence macro...). Suggestions and compliance are unchanged.")
+        for i, alias in ipairs(aliases) do
+            local open = Kit.IsOpen(alias)
+            local top = y
+            y = Kit.Header(sub, y, {
+                title = SpellLabel(def, alias.spell) .. "   |cff909090-> " .. AliasTargets(def, alias) .. "|r",
+                open = open, editable = editable,
+                onClick = function() Kit.Toggle(alias) end,
+                onDelete = function()
+                    Store.Remove(def, aliases, i)
+                    Kit.Rebuild()
+                end,
+                deleteTip = "Remove alias",
+            })
+            if open then
+                local inner = Kit.Child(sub)
+                for j, name in ipairs(alias.glow) do
+                    y = Kit.Header(inner, y, {
+                        title = SpellLabel(def, name),
+                        editable = editable,
+                        onDelete = function()
+                            Store.Remove(def, alias.glow, j)
+                            Kit.Rebuild()
+                        end,
+                        deleteTip = "Stop glowing this spell",
+                    })
+                end
+                _, h = W:DualRow(inner, y,
+                    { type = "input", text = "Also Glow", inputWidth = 200, inputStyle = "popup",
+                      placeholder = "Spell name or ID",
+                      disabled = function() return not editable end, disabledTooltip = Kit.READ_ONLY_TIP,
+                      getValue = function() return "" end,
+                      setValue = function(v)
+                          local name = SpellFromText(def, v)
+                          if not name then return end
+                          if not Store.AddGlowTarget(def, alias, name) then Say(SpellLabel(def, name) .. " is already on this alias.") return end
+                          Kit.Rebuild()
+                      end },
+                    { type = "spacer" })
+                y = y - h
+                Kit.OpenSpan(sub, top, y, 0)
+            end
+        end
+        _, h = W:DualRow(sub, y,
+            { type = "input", text = "Add Alias", inputWidth = 200, inputStyle = "popup",
+              placeholder = "Ability (spell name or ID)",
+              disabled = function() return not editable end, disabledTooltip = Kit.READ_ONLY_TIP,
+              getValue = function() return "" end,
+              setValue = function(v)
+                  local name = SpellFromText(def, v)
+                  if not name then return end
+                  local alias = Store.AddGlowAlias(def, name)
+                  if not alias then Say(SpellLabel(def, name) .. " already has an alias.") return end
+                  Kit.state.open[alias] = true
+                  Kit.Rebuild()
+              end },
+            { type = "spacer" })
+        y = y - h
+        Kit.OpenSpan(parent, aliasTop, y, 0)
     end
 
     _, h = W:SectionHeader(parent, "GROUPS", y); y = y - h
